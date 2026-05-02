@@ -30,7 +30,7 @@
 
 미션 규정상 정의된 형식. 모든 통신·로깅 코드에서 일관되게 사용.
 
-```
+```text
 <회사번호> <시간> <압력 kPa> <수심 m>
 예: EX01 1:51:42 UTC 9.8 kPa 1.00 meters
 ```
@@ -128,8 +128,8 @@ CI 나 스크립트에서 포트가 다를 때는 `--upload-port /dev/cu.usbmode
 | 펌웨어 업로드 실패, 빌드 에러     | PlatformIO 문서, `esptool` GitHub       |
 | USB 안 잡힘, 전원 문제            | DevKitC-1 레퍼런스, 보드 판매자         |
 | Arduino API 일반 (digitalWrite 등)| arduino.stackexchange.com               |
-| MS5837 / 압력 센서                | BlueRobotics `BlueRobotics_MS5837` GitHub |
-| MATE 미션 규정 해석               | `docs/2026_MATE_Floats_분석.md`, MATE 공식 사이트 |
+| MS5837 / 압력 센서                | BlueRobotics MS5837 GitHub              |
+| MATE 미션 규정 해석               | `docs/2026_MATE_Floats_분석.md`         |
 
 **검색 키워드 패턴**: `ESP32-S3 [증상] arduino` 형태로 검색하면 옛날 ESP32 정보와 섞이지 않습니다. 항상 **`ESP32-S3`** (하이픈 포함) 명시.
 
