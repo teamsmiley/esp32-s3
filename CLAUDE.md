@@ -53,6 +53,25 @@ CI 나 스크립트에서 포트가 다를 때는 `--upload-port /dev/cu.usbmode
 
 "부팅 출력이 안 보임" 문제를 디버깅할 때, 모니터를 열어둔 상태에서 보드의 RST 버튼을 누르라고 안내하면 가장 빠르게 `setup()` 출력을 확인할 수 있습니다.
 
+## Phase 완료 시 백업 절차
+
+각 학습 Phase 가 정상 동작하는 것을 확인했으면, 다음 단계로 넘어가기 전에 **반드시** 다음 세 가지를 수행합니다.
+
+1. **`src/main.cpp` 를 `examples/` 에 보존**
+   - 파일명 규칙: `examples/phase-<phase번호>-<짧은-설명>.cpp`
+   - 예: `examples/phase-1-1-rainbow-led.cpp`, `examples/phase-1-2-boot-button.cpp`
+   - 이유: `src/main.cpp` 는 다음 Phase 에서 덮어써짐. examples 는 IDE 에서 옆에 열어두고 참고용
+   - `examples/` 는 PlatformIO 빌드 대상이 아니므로 컴파일 충돌 없음
+
+2. **`docs/01-learning-roadmap.md` 의 체크박스 업데이트**
+   - `- [ ]` → `- [x]` 로 변경
+
+3. **git 커밋 (사용자가 git init 함)**
+   - 커밋 메시지: `Phase X-Y 완료: <짧은 설명>` 형태
+   - 커밋은 사용자가 명시적으로 요청할 때만. 자동으로 하지 말 것
+
+이 세 가지가 끝나야 다음 Phase 코드를 `src/main.cpp` 에 쓸 수 있습니다.
+
 ## 트러블슈팅: 어디서 답을 찾을까
 
 문제가 어느 층에서 발생했는지에 따라 검색 위치가 다릅니다.
