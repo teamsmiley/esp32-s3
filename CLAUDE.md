@@ -103,19 +103,6 @@ CI 나 스크립트에서 포트가 다를 때는 `--upload-port /dev/cu.usbmode
 
 "부팅 출력이 안 보임" 문제를 디버깅할 때, 모니터를 열어둔 상태에서 보드의 RST 버튼을 누르라고 안내하면 가장 빠르게 `setup()` 출력을 확인할 수 있습니다.
 
-## 마일스톤 완료 시 백업 절차
-
-검증된 동작 (센서 동작, 부력 엔진 제어, 통신 등) 을 미션 본 코드에 통합하기 전에는 **반드시** 다음을 수행합니다.
-
-1. **`src/main.cpp` 를 `examples/` 에 보존**
-   - 파일명 규칙: `examples/<짧은-설명>.cpp` (예: `examples/depth-sensor-readout.cpp`)
-   - 이유: `src/main.cpp` 는 다음 작업에서 덮어써질 수 있음. examples 는 검증된 동작의 최소 재현 코드 (sanity check 용)
-   - `examples/` 는 PlatformIO 빌드 대상이 아니므로 컴파일 충돌 없음
-
-2. **git 커밋**
-   - 커밋 메시지는 미션 진척 기준으로 (예: `깊이 센서 읽기 검증`, `부력 엔진 PWM 제어 추가`)
-   - 커밋은 사용자가 명시적으로 요청할 때만. 자동으로 하지 말 것
-
 ## 트러블슈팅: 어디서 답을 찾을까
 
 문제가 어느 층에서 발생했는지에 따라 검색 위치가 다릅니다.
@@ -145,8 +132,8 @@ CI 나 스크립트에서 포트가 다를 때는 `--upload-port /dev/cu.usbmode
 
 ## 디렉토리 구조
 
-- `src/main.cpp` — 현재 작업 중인 단일 파일 스케치 (검증 끝난 후 `examples/` 로 백업)
+- `src/main.cpp` — 현재 작업 중인 단일 파일 스케치
 - `platformio.ini` — 보드 설정 (기본값으로 무작정 재생성하지 말 것)
 - `docs/2026_MATE_Floats_분석.md` — 미션 규정 분석 (점수표, 패킷 형식, 물리·전기 제약)
-- `examples/` — 검증된 동작의 최소 재현 코드 (LED, 버튼, 센서 등). PlatformIO 빌드 대상 아님
+- `examples/` — 과거 학습 단계의 최소 재현 코드 (LED, 버튼 등). PlatformIO 빌드 대상 아님
 - `include/`, `lib/`, `test/` — 아직 사용 안 함 (PlatformIO 스캐폴딩, 각 폴더의 `README` 참고)
