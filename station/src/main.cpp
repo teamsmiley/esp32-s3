@@ -4,18 +4,16 @@
 
 // 지상국 수신기 — float 보드에서 broadcast 한 미션 데이터 패킷을 받아 시리얼로 출력.
 
-// 패킷 수신 콜백
-// recv_info->src_addr 에 송신자 MAC 이 들어 있음
-void onEspNowRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+// 패킷 수신 콜백 (Arduino-ESP32 v2.x 시그니처: 첫 인자 = 송신자 MAC)
+void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   // 받은 데이터는 NULL 종료가 안 돼있을 수 있으므로 안전하게 복사
   char buf[128];
   int copyLen = len < (int)sizeof(buf) - 1 ? len : (int)sizeof(buf) - 1;
   memcpy(buf, data, copyLen);
   buf[copyLen] = '\0';
 
-  const uint8_t *m = info->src_addr;
   Serial.printf("[RX %02X:%02X:%02X:%02X:%02X:%02X] %s\n",
-                m[0], m[1], m[2], m[3], m[4], m[5], buf);
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], buf);
 }
 
 void setup() {

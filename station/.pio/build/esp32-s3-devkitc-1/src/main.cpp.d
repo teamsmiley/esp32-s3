@@ -178,4 +178,26 @@
  /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_spi_flash_counters.h \
  /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/esp32/spiram.h \
  /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/io_pin_remap.h \
- /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFi.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/IPv6Address.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiType.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiSTA.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiGeneric.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_smartconfig.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/manager.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/common/protocomm.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/security/protocomm_security.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/wifi_config.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiAP.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiScan.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Client.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiServer.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Server.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_now.h \
+ /Users/ragon/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_wifi_types.h
