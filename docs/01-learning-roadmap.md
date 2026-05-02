@@ -50,7 +50,7 @@
 - [x] **1-1. RGB LED 색상 제어**
   - `neopixelWrite(pin, r, g, b)` 로 다양한 색상 만들기
   - HSV → RGB 변환으로 무지개 효과
-- [ ] **1-2. BOOT 버튼 입력 받기**
+- [x] **1-2. BOOT 버튼 입력 받기**
   - GPIO0 = BOOT 버튼 (보드 내장)
   - `pinMode(0, INPUT_PULLUP)`, `digitalRead(0)` 사용
   - 버튼 눌림 검출 (debounce 포함)
