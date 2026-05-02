@@ -1,2 +1,6 @@
 .DS_Store
 **/.pio
+tools/.venv/
+tools/mission.csv
+tools/mission.png
+tools/__pycache__/
