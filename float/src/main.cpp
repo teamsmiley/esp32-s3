@@ -30,6 +30,12 @@ uint8_t stationMac[6] = {0xAC, 0xA7, 0x04, 0x13, 0x3A, 0xE8};
 bool espNowReady = false;
 bool fsReady = false;
 
+// 무선 명령 플래그 (수신 콜백은 ISR-like 라 무거운 작업은 loop 에서 처리)
+volatile bool cmdDumpRequested = false;
+volatile bool cmdZeroRequested = false;
+volatile bool cmdPingRequested = false;
+volatile bool cmdStartRequested = false;
+
 // BOOT 버튼 디바운스 상태
 int lastButtonState = HIGH;
 unsigned long lastDebounceMs = 0;
@@ -96,6 +102,24 @@ void formatPacket(char *out, size_t outLen) {
 void onEspNowSent(const uint8_t *mac, esp_now_send_status_t status) {
   Serial.printf("  [TX %s]\n",
                 status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
+}
+
+// ESP-NOW 수신 콜백 — station 에서 온 명령만 처리
+void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
+  if (memcmp(mac, stationMac, 6) != 0) return;  // 다른 팀 / 모르는 송신자 무시
+
+  char cmd[16];
+  int copyLen = len < (int)sizeof(cmd) - 1 ? len : (int)sizeof(cmd) - 1;
+  memcpy(cmd, data, copyLen);
+  cmd[copyLen] = '\0';
+
+  Serial.printf("[CMD ←] %s\n", cmd);
+
+  if      (strcmp(cmd, "DUMP") == 0) cmdDumpRequested = true;
+  else if (strcmp(cmd, "ZERO") == 0) cmdZeroRequested = true;
+  else if (strcmp(cmd, "PING") == 0) cmdPingRequested = true;
+  else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
+  else Serial.printf("  알 수 없는 명령: %s\n", cmd);
 }
 
 // LittleFS 마운트 + 직전 미션 로그 백업
@@ -167,6 +191,7 @@ void setupEspNow() {
     return;
   }
   esp_now_register_send_cb(onEspNowSent);
+  esp_now_register_recv_cb(onEspNowRecv);
 
   esp_now_peer_info_t peer = {};
   memcpy(peer.peer_addr, stationMac, 6);
@@ -241,12 +266,36 @@ void loop() {
     nextPacketMs = missionStartMs;
   }
 
-  // 시리얼 명령 처리
+  // 시리얼 명령 처리 (개발 중 보조용)
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == 'D' || c == 'd') {
-      dumpLog();
-    }
+    if (c == 'D' || c == 'd') dumpLog();
+  }
+
+  // 무선 명령 플래그 처리 (콜백에서 set, 여기서 실행)
+  if (cmdDumpRequested) {
+    cmdDumpRequested = false;
+    dumpLog();
+  }
+  if (cmdZeroRequested) {
+    cmdZeroRequested = false;
+    Serial.println("[CMD] ZERO 처리 시작");
+    calibrateZero();
+    missionStartMs = millis();
+    nextPacketMs = missionStartMs;
+    char resp[80];
+    snprintf(resp, sizeof(resp), "ZERO_OK offset=%.4f m", depthOffset);
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
+  }
+  if (cmdPingRequested) {
+    cmdPingRequested = false;
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"PONG", 4);
+    Serial.println("[CMD] PING → PONG 회신");
+  }
+  if (cmdStartRequested) {
+    cmdStartRequested = false;
+    Serial.println("[CMD] START — 자율 시퀀스는 아직 미구현 (stub)");
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"START_STUB", 10);
   }
 
   sensor.read();
