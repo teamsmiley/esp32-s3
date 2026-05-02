@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <WiFi.h>
+#include <esp_now.h>
 #include "MS5837.h"
 
 #define I2C_SDA 8
@@ -17,6 +19,10 @@ MS5837 sensor;
 float depthOffset = 0.0f;     // 0점 보정 offset (m)
 unsigned long missionStartMs = 0;
 unsigned long nextPacketMs = 0;
+
+// ESP-NOW broadcast 주소 (페어링 없이 모든 ESP-NOW 디바이스에 송신)
+uint8_t broadcastAddr[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+bool espNowReady = false;
 
 // BOOT 버튼 디바운스 상태
 int lastButtonState = HIGH;
@@ -80,6 +86,37 @@ void formatPacket(char *out, size_t outLen) {
            COMPANY_NUMBER, timeStr, kPa, depthM);
 }
 
+// ESP-NOW 송신 결과 콜백 (디버깅용)
+void onEspNowSent(const uint8_t *mac, esp_now_send_status_t status) {
+  Serial.printf("  [TX %s]\n",
+                status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
+}
+
+// ESP-NOW 초기화 (broadcast peer 등록)
+void setupEspNow() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();   // 다른 AP 에 붙으려는 시도 차단
+
+  Serial.printf("[ESP-NOW] 송신측 MAC: %s\n", WiFi.macAddress().c_str());
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] init 실패");
+    return;
+  }
+  esp_now_register_send_cb(onEspNowSent);
+
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, broadcastAddr, 6);
+  peer.channel = 0;       // 0 = 현재 STA 채널
+  peer.encrypt = false;
+  if (esp_now_add_peer(&peer) != ESP_OK) {
+    Serial.println("[ESP-NOW] broadcast peer 등록 실패");
+    return;
+  }
+  espNowReady = true;
+  Serial.println("[ESP-NOW] 준비 완료 — broadcast 모드");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(2000);
@@ -103,6 +140,7 @@ void setup() {
   Serial.println();
 
   calibrateZero();
+  setupEspNow();
 
   Serial.println("BOOT 버튼을 누르면 재보정합니다 (수면에 띄운 후 누르세요).");
   Serial.printf("회사번호: %s, 패킷 주기: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
@@ -138,11 +176,14 @@ void loop() {
 
   sensor.read();
 
-  // 5초마다 미션 데이터 패킷 송출
+  // 5초마다 미션 데이터 패킷 송출 (시리얼 + 무선)
   if ((long)(millis() - nextPacketMs) >= 0) {
     char packet[80];
     formatPacket(packet, sizeof(packet));
     Serial.println(packet);
+    if (espNowReady) {
+      esp_now_send(broadcastAddr, (uint8_t *)packet, strlen(packet));
+    }
     nextPacketMs += PACKET_INTERVAL_MS;
   }
 
