@@ -20,8 +20,8 @@ float depthOffset = 0.0f;     // 0점 보정 offset (m)
 unsigned long missionStartMs = 0;
 unsigned long nextPacketMs = 0;
 
-// ESP-NOW broadcast 주소 (페어링 없이 모든 ESP-NOW 디바이스에 송신)
-uint8_t broadcastAddr[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+// 짝 station 보드의 MAC. unicast 송신 → 다른 팀에게 패킷이 도달하지 않음.
+uint8_t stationMac[6] = {0xAC, 0xA7, 0x04, 0x13, 0x3A, 0xE8};
 bool espNowReady = false;
 
 // BOOT 버튼 디바운스 상태
@@ -106,15 +106,17 @@ void setupEspNow() {
   esp_now_register_send_cb(onEspNowSent);
 
   esp_now_peer_info_t peer = {};
-  memcpy(peer.peer_addr, broadcastAddr, 6);
+  memcpy(peer.peer_addr, stationMac, 6);
   peer.channel = 0;       // 0 = 현재 STA 채널
   peer.encrypt = false;
   if (esp_now_add_peer(&peer) != ESP_OK) {
-    Serial.println("[ESP-NOW] broadcast peer 등록 실패");
+    Serial.println("[ESP-NOW] station peer 등록 실패");
     return;
   }
   espNowReady = true;
-  Serial.println("[ESP-NOW] 준비 완료 — broadcast 모드");
+  Serial.printf("[ESP-NOW] 준비 완료 — unicast → %02X:%02X:%02X:%02X:%02X:%02X\n",
+                stationMac[0], stationMac[1], stationMac[2],
+                stationMac[3], stationMac[4], stationMac[5]);
 }
 
 void setup() {
@@ -182,7 +184,7 @@ void loop() {
     formatPacket(packet, sizeof(packet));
     Serial.println(packet);
     if (espNowReady) {
-      esp_now_send(broadcastAddr, (uint8_t *)packet, strlen(packet));
+      esp_now_send(stationMac, (uint8_t *)packet, strlen(packet));
     }
     nextPacketMs += PACKET_INTERVAL_MS;
   }
