@@ -6,6 +6,12 @@ ESP32-S3 DevKitC-1 N16R8 보드용 PlatformIO 프로젝트.
 - **PSRAM**: 8 MB Octal SPI
 - **Framework**: Arduino
 
+## USB 포트
+
+보드에 USB-C 포트가 두 개 있습니다. **`USB` 라벨이 적힌 쪽을 사용하세요.** `COM` 라벨 쪽은 거의 안 씁니다.
+
+(둘 다 전원/데이터 모두 가능하지만, 이 프로젝트의 `Serial` 출력은 `USB` 포트로만 나옵니다.)
+
 ## 자주 쓰는 명령어
 
 ### 코드 수정 후 한 번에 빌드 + 업로드 + 시리얼 모니터
@@ -25,13 +31,13 @@ pio run -t upload -t monitor
 
 ### 그 외 명령어
 
-| 명령                   | 용도                     |
-| ---------------------- | ------------------------ |
-| `pio run`              | 빌드만                   |
-| `pio run -t upload`    | 빌드 + 업로드            |
-| `pio device monitor`   | 시리얼 모니터만          |
-| `pio run -t clean`     | 빌드 결과물 청소         |
-| `pio device list`      | 연결된 시리얼 포트 목록  |
+| 명령                 | 용도                    |
+| -------------------- | ----------------------- |
+| `pio run`            | 빌드만                  |
+| `pio run -t upload`  | 빌드 + 업로드           |
+| `pio device monitor` | 시리얼 모니터만         |
+| `pio run -t clean`   | 빌드 결과물 청소        |
+| `pio device list`    | 연결된 시리얼 포트 목록 |
 
 ## 디렉토리 구조
 
