@@ -54,7 +54,7 @@
   - GPIO0 = BOOT 버튼 (보드 내장)
   - `pinMode(0, INPUT_PULLUP)`, `digitalRead(0)` 사용
   - 버튼 눌림 검출 (debounce 포함)
-- [ ] **1-3. 버튼으로 LED 색상 토글**
+- [x] **1-3. 버튼으로 LED 색상 토글**
   - 1-1 + 1-2 결합
   - 누를 때마다 색상 순환
 
