@@ -53,6 +53,31 @@ CI 나 스크립트에서 포트가 다를 때는 `--upload-port /dev/cu.usbmode
 
 "부팅 출력이 안 보임" 문제를 디버깅할 때, 모니터를 열어둔 상태에서 보드의 RST 버튼을 누르라고 안내하면 가장 빠르게 `setup()` 출력을 확인할 수 있습니다.
 
+## 트러블슈팅: 어디서 답을 찾을까
+
+문제가 어느 층에서 발생했는지에 따라 검색 위치가 다릅니다.
+
+| 증상                              | 1순위 검색 위치                         |
+| --------------------------------- | --------------------------------------- |
+| `Serial.print` 동작 이상          | GitHub `espressif/arduino-esp32` Issues |
+| WiFi / BLE / PSRAM 동작 문제      | Espressif 공식 문서 (ESP-IDF)           |
+| GPIO / 핀 동작 문제               | ESP32-S3 데이터시트, 보드 매뉴얼        |
+| 펌웨어 업로드 실패, 빌드 에러     | PlatformIO 문서, `esptool` GitHub       |
+| USB 안 잡힘, 전원 문제            | DevKitC-1 레퍼런스, 보드 판매자         |
+| Arduino API 일반 (digitalWrite 등)| arduino.stackexchange.com               |
+
+**검색 키워드 패턴**: `ESP32-S3 [증상] arduino` 형태로 검색하면 옛날 ESP32 정보와 섞이지 않습니다. 항상 **`ESP32-S3`** (하이픈 포함) 명시.
+
+**핵심 자료 출처:**
+
+- `espressif/arduino-esp32` GitHub — Arduino 호환 레이어 (Espressif 가 직접 관리)
+- docs.espressif.com/projects/esp-idf — ESP-IDF 공식 문서
+- docs.espressif.com/projects/arduino-esp32 — Arduino-ESP32 공식 문서
+- docs.platformio.org — PlatformIO 공식 문서
+- esp32.com — Espressif 커뮤니티 포럼
+
+**참고**: ESP32 시리즈는 90% 이상 답이 Espressif 쪽에 있습니다. Arduino 회사 자체는 표준만 정하고 ESP32 지원은 거의 안 합니다.
+
 ## 디렉토리 구조
 
 - `src/main.cpp` — 단일 파일 Arduino 스케치 (현재는 깨끗한 골격만)
