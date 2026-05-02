@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/ragon/.platformio/penv/bin/pio run *)"
+    ]
+  }
+}

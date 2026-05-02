@@ -1,66 +1,64 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include "MS5837.h"
 
-#define LED_PIN 48
-#define BUTTON_PIN 0
-#define BRIGHTNESS 10
-#define DEBOUNCE_MS 50
+#define I2C_SDA 8
+#define I2C_SCL 9
 
-struct Color {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-  const char* name;
-};
+#define FLUID_DENSITY 997.0f  // 담수 kg/m^3 (바닷물은 1029.0)
+#define READ_INTERVAL_MS 500
 
-const Color rainbow[] = {
-    {BRIGHTNESS, 0,              0,          "빨강"},
-    {BRIGHTNESS, BRIGHTNESS / 2, 0,          "주황"},
-    {BRIGHTNESS, BRIGHTNESS,     0,          "노랑"},
-    {0,          BRIGHTNESS,     0,          "초록"},
-    {0,          0,              BRIGHTNESS, "파랑"},
-    {BRIGHTNESS / 3, 0,          BRIGHTNESS, "남색"},
-    {BRIGHTNESS, 0,              BRIGHTNESS, "보라"},
-};
-const int NUM_COLORS = sizeof(rainbow) / sizeof(rainbow[0]);
+MS5837 sensor;
 
-int colorIndex = 0;
-int lastButtonState = HIGH;
-int lastReading = HIGH;
-unsigned long lastChangeTime = 0;
-
-void showColor(int idx) {
-  Color c = rainbow[idx];
-  neopixelWrite(LED_PIN, c.r, c.g, c.b);
-  Serial.printf("[%d/%d] %s\n", idx + 1, NUM_COLORS, c.name);
+void scanI2C() {
+  Serial.println("[I2C 스캔 시작]");
+  int found = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  발견: 0x%02X\n", addr);
+      found++;
+    }
+  }
+  Serial.printf("[I2C 스캔 완료 — %d 개 장치 발견]\n", found);
+  if (found == 0) {
+    Serial.println("  배선 확인: SDA, SCL, VCC(3.3V), GND, 풀업 저항");
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("=== Phase 1-3: 버튼으로 색상 토글 ===");
-  Serial.println("BOOT 버튼을 누를 때마다 색상이 바뀝니다");
+  Serial.println("=== MS5837 깊이 센서 테스트 ===");
+  Serial.printf("I2C 핀: SDA=GPIO%d, SCL=GPIO%d\n", I2C_SDA, I2C_SCL);
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  showColor(colorIndex);  // 초기 색상
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  scanI2C();
+
+  Serial.println("[MS5837 초기화 시도...]");
+  while (!sensor.init()) {
+    Serial.println("  초기화 실패 — 배선과 센서 모델을 확인하세요. 5초 후 재시도.");
+    delay(5000);
+  }
+  Serial.println("[MS5837 초기화 성공]");
+
+  sensor.setModel(MS5837::MS5837_30BA);
+  sensor.setFluidDensity(FLUID_DENSITY);
+  Serial.printf("모델: MS5837-30BA, 유체 밀도: %.1f kg/m^3\n", FLUID_DENSITY);
+  Serial.println();
+  Serial.println("Pressure(mbar) | Temp(C) | Depth(m) | Altitude(m)");
+  Serial.println("---------------+---------+----------+-----------");
 }
 
 void loop() {
-  int reading = digitalRead(BUTTON_PIN);
+  sensor.read();
 
-  if (reading != lastReading) {
-    lastChangeTime = millis();
-    lastReading = reading;
-  }
+  Serial.printf("%13.2f | %7.2f | %8.3f | %9.2f\n",
+                sensor.pressure(),
+                sensor.temperature(),
+                sensor.depth(),
+                sensor.altitude());
 
-  if (millis() - lastChangeTime > DEBOUNCE_MS) {
-    if (reading != lastButtonState) {
-      lastButtonState = reading;
-
-      // 눌림 (HIGH → LOW) 순간에만 색상 변경
-      if (lastButtonState == LOW) {
-        colorIndex = (colorIndex + 1) % NUM_COLORS;
-        showColor(colorIndex);
-      }
-    }
-  }
+  delay(READ_INTERVAL_MS);
 }
