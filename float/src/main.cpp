@@ -2,7 +2,12 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <LittleFS.h>
 #include "MS5837.h"
+
+#define LOG_FILE   "/mission.log"
+#define LOG_BACKUP "/mission.log.bak"
+#define DUMP_INTER_PACKET_MS 50  // dump 시 패킷 간 간격 (ESP-NOW 큐 보호)
 
 #define I2C_SDA 8
 #define I2C_SCL 9
@@ -23,6 +28,7 @@ unsigned long nextPacketMs = 0;
 // 짝 station 보드의 MAC. unicast 송신 → 다른 팀에게 패킷이 도달하지 않음.
 uint8_t stationMac[6] = {0xAC, 0xA7, 0x04, 0x13, 0x3A, 0xE8};
 bool espNowReady = false;
+bool fsReady = false;
 
 // BOOT 버튼 디바운스 상태
 int lastButtonState = HIGH;
@@ -92,7 +98,64 @@ void onEspNowSent(const uint8_t *mac, esp_now_send_status_t status) {
                 status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
 
-// ESP-NOW 초기화 (broadcast peer 등록)
+// LittleFS 마운트 + 직전 미션 로그 백업
+void setupLittleFS() {
+  Serial.println("[LittleFS] 마운트 시도...");
+  if (!LittleFS.begin(true)) {  // true = 마운트 실패 시 자동 포맷
+    Serial.println("[LittleFS] 마운트 실패");
+    return;
+  }
+  if (LittleFS.exists(LOG_FILE)) {
+    if (LittleFS.exists(LOG_BACKUP)) LittleFS.remove(LOG_BACKUP);
+    LittleFS.rename(LOG_FILE, LOG_BACKUP);
+    Serial.println("[LittleFS] 직전 미션 로그를 mission.log.bak 으로 백업");
+  }
+  fsReady = true;
+  Serial.printf("[LittleFS] 준비 완료 — %u / %u bytes 사용\n",
+                LittleFS.usedBytes(), LittleFS.totalBytes());
+}
+
+// 미션 로그에 한 줄 append
+void appendLog(const char *line) {
+  if (!fsReady) return;
+  File f = LittleFS.open(LOG_FILE, "a");
+  if (!f) {
+    Serial.println("[LittleFS] open(append) 실패");
+    return;
+  }
+  f.println(line);
+  f.close();
+}
+
+// 미션 로그 전체를 ESP-NOW 로 송출 (회수 후 데이터 전송 시뮬레이션)
+void dumpLog() {
+  if (!fsReady) {
+    Serial.println("[dump] LittleFS 준비 안 됨");
+    return;
+  }
+  File f = LittleFS.open(LOG_FILE, "r");
+  if (!f) {
+    Serial.println("[dump] 로그 파일 없음");
+    return;
+  }
+  Serial.println("[dump] 시작");
+  int count = 0;
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();  // \r 등 제거
+    if (line.length() == 0) continue;
+    Serial.printf("  [dump %d] %s\n", count + 1, line.c_str());
+    if (espNowReady) {
+      esp_now_send(stationMac, (const uint8_t *)line.c_str(), line.length());
+    }
+    delay(DUMP_INTER_PACKET_MS);  // ESP-NOW 큐 부담 감소
+    count++;
+  }
+  f.close();
+  Serial.printf("[dump] 완료 — %d 줄 송신\n", count);
+}
+
+// ESP-NOW 초기화 (station unicast peer 등록)
 void setupEspNow() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();   // 다른 AP 에 붙으려는 시도 차단
@@ -142,9 +205,11 @@ void setup() {
   Serial.println();
 
   calibrateZero();
+  setupLittleFS();
   setupEspNow();
 
   Serial.println("BOOT 버튼을 누르면 재보정합니다 (수면에 띄운 후 누르세요).");
+  Serial.println("시리얼에 'D' 입력 시 로그 파일을 station 에 dump 합니다.");
   Serial.printf("회사번호: %s, 패킷 주기: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.println();
 
@@ -176,9 +241,17 @@ void loop() {
     nextPacketMs = missionStartMs;
   }
 
+  // 시리얼 명령 처리
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'D' || c == 'd') {
+      dumpLog();
+    }
+  }
+
   sensor.read();
 
-  // 5초마다 미션 데이터 패킷 송출 (시리얼 + 무선)
+  // 5초마다 미션 데이터 패킷 송출 (시리얼 + 무선 + LittleFS)
   if ((long)(millis() - nextPacketMs) >= 0) {
     char packet[80];
     formatPacket(packet, sizeof(packet));
@@ -186,6 +259,7 @@ void loop() {
     if (espNowReady) {
       esp_now_send(stationMac, (uint8_t *)packet, strlen(packet));
     }
+    appendLog(packet);
     nextPacketMs += PACKET_INTERVAL_MS;
   }
 
