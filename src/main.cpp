@@ -6,13 +6,17 @@
 #define I2C_SCL 9
 #define BOOT_BUTTON 0
 
+#define COMPANY_NUMBER "PVPHSROV"
 #define FLUID_DENSITY 997.0f  // 담수 kg/m^3 (바닷물은 1029.0)
 #define READ_INTERVAL_MS 500
+#define PACKET_INTERVAL_MS 5000   // 미션 규정: 5초마다 패킷 1개
 #define ZERO_SAMPLES 16       // 0점 보정 시 평균낼 샘플 수
 #define ZERO_SAMPLE_DELAY_MS 50
 
 MS5837 sensor;
 float depthOffset = 0.0f;     // 0점 보정 offset (m)
+unsigned long missionStartMs = 0;
+unsigned long nextPacketMs = 0;
 
 // BOOT 버튼 디바운스 상태
 int lastButtonState = HIGH;
@@ -56,6 +60,26 @@ float calibratedDepth() {
   return sensor.depth() - depthOffset;
 }
 
+// 부팅 후 경과 시간을 HH:MM:SS 로 변환
+void formatElapsed(unsigned long elapsedMs, char *out, size_t outLen) {
+  unsigned long totalSec = elapsedMs / 1000;
+  unsigned int h = totalSec / 3600;
+  unsigned int m = (totalSec % 3600) / 60;
+  unsigned int s = totalSec % 60;
+  snprintf(out, outLen, "%02u:%02u:%02u", h, m, s);
+}
+
+// 미션 데이터 패킷 한 줄 생성
+// 예: PVPHSROV 00:01:23 98.7 kPa 0.00 meters
+void formatPacket(char *out, size_t outLen) {
+  char timeStr[16];
+  formatElapsed(millis() - missionStartMs, timeStr, sizeof(timeStr));
+  float kPa = sensor.pressure() * 0.1f;  // mbar -> kPa
+  float depthM = calibratedDepth();
+  snprintf(out, outLen, "%s %s %.1f kPa %.2f meters",
+           COMPANY_NUMBER, timeStr, kPa, depthM);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(2000);
@@ -81,9 +105,11 @@ void setup() {
   calibrateZero();
 
   Serial.println("BOOT 버튼을 누르면 재보정합니다 (수면에 띄운 후 누르세요).");
+  Serial.printf("회사번호: %s, 패킷 주기: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.println();
-  Serial.println("Pressure(mbar) | Temp(C) | RawDepth(m) | Depth(m)");
-  Serial.println("---------------+---------+-------------+----------");
+
+  missionStartMs = millis();
+  nextPacketMs = missionStartMs;  // 첫 패킷은 즉시
 }
 
 // BOOT 버튼이 눌렸는지 (디바운스 적용, 누른 순간 1회)
@@ -106,17 +132,19 @@ void loop() {
   if (bootPressed()) {
     Serial.println("\n[BOOT 버튼 감지 — 재보정]");
     calibrateZero();
-    Serial.println("Pressure(mbar) | Temp(C) | RawDepth(m) | Depth(m)");
-    Serial.println("---------------+---------+-------------+----------");
+    missionStartMs = millis();   // 보정 직후를 미션 시작으로 재설정
+    nextPacketMs = missionStartMs;
   }
 
   sensor.read();
 
-  Serial.printf("%13.2f | %7.2f | %11.4f | %8.4f\n",
-                sensor.pressure(),
-                sensor.temperature(),
-                sensor.depth(),
-                calibratedDepth());
+  // 5초마다 미션 데이터 패킷 송출
+  if ((long)(millis() - nextPacketMs) >= 0) {
+    char packet[80];
+    formatPacket(packet, sizeof(packet));
+    Serial.println(packet);
+    nextPacketMs += PACKET_INTERVAL_MS;
+  }
 
   delay(READ_INTERVAL_MS);
 }
