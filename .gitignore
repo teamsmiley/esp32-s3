@@ -4,3 +4,5 @@ tools/.venv/
 tools/mission.csv
 tools/mission.png
 tools/__pycache__/
+.claude
+CLAUDE.md

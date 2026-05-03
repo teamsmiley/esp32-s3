@@ -1,9 +1,10 @@
 [project]
 name = "mate-floats-tools"
 version = "0.1.0"
-description = "MATE Floats 2026 — capture station serial + plot depth-time graph"
+description = "MATE Floats 2026 — PlatformIO + serial capture + depth-time graph"
 requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.10.9",
+    "platformio>=6.1.0",
     "pyserial>=3.5",
 ]

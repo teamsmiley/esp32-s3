@@ -1,187 +1,189 @@
 # ESP32-S3 N16R8 — MATE Floats 2026
 
-ESP32-S3 DevKitC-1 N16R8 두 대로 구성된 자율 플로트 펌웨어. **MATE ROV 2026 "Floats Under the Ice"** 미션 출전용. 미션 상세는 [`docs/2026_MATE_Floats_분석.md`](docs/2026_MATE_Floats_분석.md).
+Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built for the **MATE ROV 2026 "Floats Under the Ice"** mission. See [`docs/2026_MATE_Floats_분석.md`](docs/2026_MATE_Floats_분석.md) for full mission details.
 
-- **MCU**: ESP32-S3 N16R8 (Flash 16 MB + Octal PSRAM 8 MB)
-- **프레임워크**: Arduino (PlatformIO)
-- **무선**: ESP-NOW 양방향 unicast (MAC 화이트리스트로 대회 충돌 방지)
-- **센서**: BlueRobotics MS5837-30BA (I2C 0x76, SDA=GPIO8, SCL=GPIO9)
+- **MCU**: ESP32-S3 N16R8 (16 MB Flash + 8 MB Octal PSRAM)
+- **Framework**: Arduino (PlatformIO)
+- **Wireless**: ESP-NOW bidirectional unicast (MAC whitelist prevents cross-team interference at competition)
+- **Sensor**: BlueRobotics MS5837-30BA (I2C 0x76, SDA=GPIO8, SCL=GPIO9)
 
-## 두 보드 / 두 펌웨어
+## Two boards / two firmwares
 
-| 디렉토리 | 역할 | 의존성 |
-| -------- | ---- | ------ |
-| `float/` | 플로트 보드. 깊이 측정 + 패킷 송신 + LittleFS 로깅 + 무선 명령 수신 | MS5837 |
-| `station/` | 지상국 보드. 패킷 수신 + 키 입력으로 명령 송신 | 없음 |
+| Directory  | Role                                                                          | Dependencies |
+| ---------- | ----------------------------------------------------------------------------- | ------------ |
+| `float/`   | Float board. Depth sensing + packet TX + LittleFS logging + wireless RX       | MS5837       |
+| `station/` | Ground station board. Packet RX + key-input command TX                        | none         |
 
-## USB 포트
+## USB ports
 
-DevKitC-1 의 USB-C 포트가 두 개입니다.
+The DevKitC-1 has two USB-C ports.
 
-- **첫 펌웨어 업로드**: `UART` 라벨 쪽 (자동 reset 100% 성공)
-- **그 후 일상 사용**: `USB` 라벨 쪽 (펌웨어가 살아있으면 자동 reset 가능, `Serial` 출력이 이쪽으로 라우팅)
+- **First firmware upload**: use the `UART` side (auto-reset works 100% of the time)
+- **Day-to-day use afterward**: use the `USB` side (auto-reset works as long as the firmware is alive, and `Serial` output is routed here)
 
-자세한 함정·트러블슈팅은 [`CLAUDE.md`](CLAUDE.md) 의 "USB 포트가 두 개" 섹션 참고.
+For the full set of pitfalls and troubleshooting tips, see the "USB ports — there are two" section in [`CLAUDE.md`](CLAUDE.md).
 
-## 빌드 / 업로드 / 모니터
+## Build / upload / monitor
 
-각 보드는 자기 디렉토리 안에서:
+> **First time?** See [`docs/prerequisites.md`](docs/prerequisites.md) for installation steps (macOS / Windows, developer / demo scenarios). One-time setup is `cd tools && uv sync`.
 
-```bash
-# 플로트 보드
-cd float && pio run -t upload -t monitor
-
-# 지상국 보드
-cd station && pio run -t upload -t monitor
-```
-
-두 보드를 동시에 같은 컴퓨터에 연결했다면 포트 명시 필요:
+Activate the `tools/` virtual environment once per terminal, then `pio` works directly:
 
 ```bash
-pio device list   # 두 포트 확인
-cd float   && pio run -t upload -t monitor --upload-port /dev/cu.usbmodemAAAA
-cd station && pio run -t upload -t monitor --upload-port /dev/cu.usbmodemBBBB
+cd tools && source .venv/bin/activate    # macOS / Linux
+# Windows (PowerShell): cd tools; .venv\Scripts\Activate.ps1
 ```
 
-| 명령                 | 용도                |
-| -------------------- | ------------------- |
-| `pio run`            | 빌드만              |
-| `pio run -t upload`  | 빌드 + 업로드       |
-| `pio device monitor` | 시리얼 모니터만     |
-| `pio run -t clean`   | 빌드 결과물 청소    |
-| `pio device list`    | 연결된 시리얼 포트  |
+After activation:
 
-## 무선 명령어 사용법
+```bash
+# Float board
+pio run -d ../float -t upload -t monitor
 
-플로트가 물에 떠 있거나 회수된 직후, **station 에 연결된 시리얼 모니터(아래 Python 도구 권장)에 키 입력** 으로 float 에 명령을 보냅니다. station 펌웨어가 단일 문자를 받아 ESP-NOW 4-byte 명령으로 변환·전달.
+# Ground station board
+pio run -d ../station -t upload -t monitor
+```
 
-**무선 명령 (station → float, ESP-NOW):**
+| Command                              | Purpose               |
+| ------------------------------------ | --------------------- |
+| `pio run -d ../<board>`              | Build only            |
+| `pio run -d ../<board> -t upload`    | Build + upload        |
+| `pio device monitor --baud 115200`   | Serial monitor only   |
+| `pio run -d ../<board> -t clean`     | Clean build artifacts |
+| `pio device list`                    | List connected ports  |
 
-| 키 | 송신 명령 | float 동작 | 응답 (station 시리얼) |
-| -- | --------- | ---------- | ---------------------- |
-| `D` | `DUMP` | LittleFS 의 미션 로그 전체를 한 줄씩 무선 송신 (50 ms 간격) | `[RX] PVPHSROV ...` × N개 |
-| `Z` | `ZERO` | 깊이 0점 재보정 (16회 평균) + 미션 시간 리셋 | `[RX] ZERO_OK offset=X.XXXX m` |
-| `P` | `PING` | 연결 확인 회신 | `[RX] PONG` |
-| `S` | `STAR` (=START) | 자율 시퀀스 시작 트리거 (현재 stub) | `[RX] START_STUB` |
+## Wireless command reference
 
-**로컬 명령 (station 자체 처리):**
+While the float is on the surface or just after recovery, send commands to the float by **typing keys into the serial monitor connected to the station** (the Python tool below is recommended). The station firmware turns each single character into a 4-byte ESP-NOW command and forwards it.
 
-| 키 | 동작 | 비고 |
-| -- | ---- | ---- |
-| `R` | `received.log` 시리얼 dump | Python 도구가 자동 송신 |
-| `E` | `received.log` 삭제 | 새 미션 전 정리 |
-| `I` | 파일/FS 사용량 출력 | — |
-| `H` | 도움말 다시 출력 | — |
+**Wireless commands (station → float, ESP-NOW):**
 
-float 측은 station MAC 화이트리스트 검사로 다른 팀 명령을 자동 무시. 콜백에선 플래그만 set 하고 무거운 작업 (재보정·dump) 은 `loop()` 에서 처리해 ISR 안전성 확보.
+| Key | Command sent    | Float behavior                                                                | Response (station serial)      |
+| --- | --------------- | ----------------------------------------------------------------------------- | ------------------------------ |
+| `D` | `DUMP`          | Wirelessly transmits the entire LittleFS mission log line by line (50 ms gap) | `[RX] PVPHSROV ...` × N        |
+| `Z` | `ZERO`          | Recalibrates depth zero (16-sample average) + resets mission timer            | `[RX] ZERO_OK offset=X.XXXX m` |
+| `P` | `PING`          | Connection check reply                                                        | `[RX] PONG`                    |
+| `S` | `STAR` (=START) | Triggers the autonomous sequence (currently a stub)                           | `[RX] START_STUB`              |
 
-### 일반적인 미션 흐름 (시연 시)
+**Local commands (handled by the station itself):**
 
-세 행위자 — **Laptop**, **Station** (지상국 보드), **Float** (잠수 보드) — 가 시간 순으로 협력합니다.
+| Key | Action                       | Notes                              |
+| --- | ---------------------------- | ---------------------------------- |
+| `R` | Dumps `received.log` over serial | Sent automatically by the Python tool |
+| `E` | Deletes `received.log`           | Cleanup before a new mission       |
+| `I` | Prints file / FS usage           | —                                  |
+| `H` | Re-prints the help message       | —                                  |
+
+The float side automatically ignores commands from other teams via a station MAC whitelist check. The receive callback only sets a flag; heavy work (recalibration, dump) runs in `loop()` to keep ISR safety.
+
+### Typical mission flow (during a run)
+
+Three actors — **Laptop**, **Station** (ground board), and **Float** (submerging board) — cooperate in time order.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant L as Laptop
     participant S as Station
-    participant F as Float (수면)
-    participant W as Float (수중)
+    participant F as Float (surface)
+    participant W as Float (underwater)
 
-    Note over S,F: 두 보드 부팅 + 수면에 띄움
-    L->>S: pio device monitor (시리얼 열기)
-    F->>S: [RX] 5초마다 패킷 (ESP-NOW)
+    Note over S,F: Boot both boards + place float on surface
+    L->>S: pio device monitor (open serial)
+    F->>S: [RX] packet every 5s (ESP-NOW)
     S->>L: [RX] PVPHSROV 00:00:00 ...
 
-    L->>S: Z 키 입력
+    L->>S: press Z
     S->>F: ZERO (ESP-NOW)
-    F->>F: 현재 깊이 = 0점으로 재보정
-    Note over F: 미션 점수 ② (5점)
+    F->>F: current depth = recalibrated to zero
+    Note over F: Mission score ② (5 pts)
 
-    Note over F,W: Float 잠수 — 무선 도달 불가
-    W-->>W: 5초마다 LittleFS 에 누적
-    Note over W: (station 은 침묵)
+    Note over F,W: Float dives — wireless out of range
+    W-->>W: appends to LittleFS every 5s
+    Note over W: (station is silent)
 
-    Note over W,F: Float 회수 — 무선 복구
-    F->>S: [RX] 패킷 재개
+    Note over W,F: Float recovered — wireless restored
+    F->>S: [RX] packets resume
 
-    L->>S: D 키 입력
+    L->>S: press D
     S->>F: DUMP (ESP-NOW)
-    F->>S: LittleFS 의 모든 패킷 (50ms 간격)
-    S->>S: received.log 에 누적 저장
-    Note over S: 미션 점수 ⑤ (10점)
+    F->>S: every packet from LittleFS (50 ms apart)
+    S->>S: appends to received.log
+    Note over S: Mission score ⑤ (10 pts)
 
-    L->>L: Ctrl+C 로 모니터 종료
-    L->>S: uv run read_and_graph.py (R 자동 송신)
-    S->>L: received.log dump (시리얼)
-    L->>L: received.png 그래프 생성
-    Note over L: 미션 점수 ⑥ (10점)
+    L->>L: Ctrl+C closes the monitor
+    L->>S: python read_and_graph.py (auto-sends R)
+    S->>L: received.log dump (over serial)
+    L->>L: generates received.png chart
+    Note over L: Mission score ⑥ (10 pts)
 ```
 
-**단계별 요약:**
+**Step-by-step summary:**
 
-| # | 행위자 | 동작 | 점수 |
-|---|---|---|---|
-| 1 | Station + Float | 두 보드 부팅 (USB / 배터리) | — |
-| 2 | Laptop | `pio device monitor` 로 station 시리얼 열기 | — |
-| 3 | 사람 | float 을 물에 띄움 (수면) | — |
-| 4 | Laptop | `Z` 키 → station → float 으로 ZERO 명령 (수면 0점 재보정) | ② 5점 |
-| 5 | 사람 | float 잠수 → 미션 수행 (수심 2.5m / 40cm 프로파일) | — |
-| 6 | Float | 무선 도달 안 됨 → 자기 LittleFS 에만 5초마다 누적 | — |
-| 7 | 사람 | float 회수 (수면) → 무선 복구 | — |
-| 8 | Laptop | `D` 키 → station → float 으로 DUMP 명령 → station LittleFS 에 모든 패킷 저장 | ⑤ 10점 |
-| 9 | Laptop | 모니터 종료 → `cd tools && uv run read_and_graph.py` → `received.log` + `received.png` | ⑥ 10점 |
+| #   | Actor             | Action                                                                                            | Score    |
+| --- | ----------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| 1   | Station + Float   | Boot both boards (USB / battery)                                                                  | —        |
+| 2   | Laptop            | Open the station serial via `pio device monitor`                                                  | —        |
+| 3   | Operator          | Place the float on the water (surface)                                                            | —        |
+| 4   | Laptop            | `Z` → station → ZERO command to float (zero-point calibration at the surface)                     | ② 5 pts  |
+| 5   | Operator          | Float dives → runs the mission (2.5 m depth / 40 cm profile)                                      | —        |
+| 6   | Float             | No wireless reach → appends only to its own LittleFS every 5 s                                    | —        |
+| 7   | Operator          | Float recovered (back to surface) → wireless restored                                             | —        |
+| 8   | Laptop            | `D` → station → DUMP command to float → station saves every packet to its LittleFS               | ⑤ 10 pts |
+| 9   | Laptop            | Close monitor → `python read_and_graph.py` → produces `received.png` chart                        | ⑥ 10 pts |
 
-**키 입력 분담:**
-- `D` `Z` `P` `S` = station 이 받아서 ESP-NOW 로 float 에 전달
-- `R` `E` `I` = station 로컬 (LittleFS dump/erase/info). 사람이 직접 누르거나 Python 이 자동 송신
+**Key-input responsibilities:**
 
-## 데이터 읽기 + 그래프 도구 (`tools/`)
+- `D` `Z` `P` `S` = the station receives them and forwards via ESP-NOW to the float
+- `R` `E` `I` = handled locally by the station (LittleFS dump / erase / info). Either typed by the operator or sent automatically by the Python tool.
+
+## Data reading + graphing tool (`tools/`)
 
 ```bash
-cd tools
+cd tools && source .venv/bin/activate    # one-time per terminal
 
-# 첫 실행만: 의존성 sync (uv 가 .venv 자동 생성 + 설치)
-uv sync
-
-# 옵션 없음 — station 한 개만 꽂으면 자동 탐지 → R 송신 → received.log + received.png 생성
-uv run read_and_graph.py
+# No options needed — auto-detects the single attached station, sends R, produces received.log + received.png
+python read_and_graph.py
 ```
 
-동작:
-- ESP32-S3 USB 포트 자동 탐지 (VID=0x303A)
-- `R` 한 글자 송신 → station 의 `received.log` 가 시리얼로 흘러나옴
-- 모든 라인을 `received.log` (현재 디렉토리) 에 저장
-- `---- END received.log ----` 마커 보면 자동 종료
-- 패킷을 파싱해 `received.png` (수심-시간 그래프, Y축 반전) 생성
+Behavior:
 
-**주의**: station 시리얼은 한 번에 한 프로세스만 점유 가능. 이 도구를 띄우기 전에 `pio device monitor` 가 떠있으면 충돌하므로 종료 필요 (`pkill -f "pio.*monitor"`).
+- Auto-detects the ESP32-S3 USB port (VID=0x303A)
+- Sends a single `R` byte → the station's `received.log` flows out over serial
+- Saves every line to `received.log` (current directory)
+- Stops automatically when it sees the `---- END received.log ----` marker
+- Parses the packets and produces `received.png` (depth-vs-time chart, Y-axis inverted)
 
-## 디렉토리 구조
+**Caution**: The station serial port can only be held by one process at a time. If `pio device monitor` is already running, it will conflict with this tool, so close it first (`pkill -f "pio.*monitor"`).
 
-```
+## Directory structure
+
+```text
 .
 ├── float/
-│   ├── platformio.ini      # 보드 + MS5837 라이브러리
-│   └── src/main.cpp        # 깊이·패킷·LittleFS·무선 송수신
+│   ├── platformio.ini      # Board + MS5837 library
+│   └── src/main.cpp        # Depth · packets · LittleFS · wireless TX/RX
 ├── station/
-│   ├── platformio.ini      # 보드 (라이브러리 없음)
-│   └── src/main.cpp        # 수신 + 키 입력 → 명령 송신
+│   ├── platformio.ini      # Board (no libraries)
+│   └── src/main.cpp        # RX + key input → command TX
 ├── tools/
-│   ├── pyproject.toml      # uv 프로젝트 (pyserial, matplotlib)
+│   ├── pyproject.toml      # uv project (platformio, pyserial, matplotlib)
 │   ├── uv.lock
 │   └── read_and_graph.py
 ├── docs/
+│   ├── prerequisites.md
 │   └── 2026_MATE_Floats_분석.md
-├── examples/               # 과거 학습 단계 코드 (LED, 버튼, 토글)
-├── CLAUDE.md               # 개발 가이드 (보드 설정, 함정, 트러블슈팅)
-├── TODO.md                 # 미션 진행 항목 + 완료 기록
+├── examples/               # Older learning-stage code (LED, button, toggle)
+├── CLAUDE.md               # Dev guide (board setup, pitfalls, troubleshooting)
+├── TODO.md                 # Mission backlog + completion log
 └── README.md
 ```
 
-## 참고 문서
+## References
 
-- [미션 분석](docs/2026_MATE_Floats_분석.md) — 점수표 / 패킷 형식 / 물리·전기 제약
-- [TODO](TODO.md) — 미션 진행 항목 + 완료된 결정사항
-- [CLAUDE.md](CLAUDE.md) — 개발 환경 / 함정 / 트러블슈팅
-- [ESP32-S3 DevKitC-1 공식 문서](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html)
-- [Arduino-ESP32 API 레퍼런스](https://docs.espressif.com/projects/arduino-esp32/en/latest/)
+- [Prerequisites](docs/prerequisites.md) — Install instructions for macOS / Windows, developer / competition-day setups
+- [Mission analysis](docs/2026_MATE_Floats_분석.md) — Scoring / packet format / physical & electrical constraints
+- [TODO](TODO.md) — Mission backlog + completed decisions
+- [CLAUDE.md](CLAUDE.md) — Dev environment / pitfalls / troubleshooting
+- [ESP32-S3 DevKitC-1 official documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html)
+- [Arduino-ESP32 API reference](https://docs.espressif.com/projects/arduino-esp32/en/latest/)

@@ -12,7 +12,8 @@
       "Read(//tmp/**)",
       "Bash(uv init *)",
       "Bash(uv add *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(uv sync *)"
     ]
   }
 }
