@@ -7,54 +7,24 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
 - **Wireless**: ESP-NOW bidirectional unicast (MAC whitelist prevents cross-team interference at competition)
 - **Sensor**: BlueRobotics MS5837-30BA (I2C 0x76, SDA=GPIO8, SCL=GPIO9)
 
-## Two boards / two firmwares
+> **First time setting up?** See [`docs/prerequisites.md`](docs/prerequisites.md) — installs uv, syncs the `tools/` venv, and walks through the two-terminal mission flow.
 
-| Directory  | Role                                                                    | Dependencies |
-| ---------- | ----------------------------------------------------------------------- | ------------ |
-| `float/`   | Float board. Depth sensing + packet TX + LittleFS logging + wireless RX | MS5837       |
-| `station/` | Ground station board. Packet RX + key-input command TX                  | none         |
+## Two boards
 
-## USB ports
+| Directory  | Role                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
+| `float/`   | Float board. Depth sensing + packet TX + LittleFS logging + wireless RX |
+| `station/` | Ground station board. Packet RX + key-input command TX                  |
 
-The DevKitC-1 has two USB-C ports.
+## USB connection
 
-- **First firmware upload**: use the `UART` side (auto-reset works 100% of the time)
-- **Day-to-day use afterward**: use the `USB` side (auto-reset works as long as the firmware is alive, and `Serial` output is routed here)
+Plug the station's USB-C cable into the **`USB`-labeled** port on the DevKitC-1 (not the `UART` side). The `Serial` output you read with the monitor is routed only through the `USB` port.
 
-For the full set of pitfalls and troubleshooting tips, see the "USB ports — there are two" section in [`CLAUDE.md`](CLAUDE.md).
-
-## Build / upload / monitor
-
-> **First time?** See [`docs/prerequisites.md`](docs/prerequisites.md) for installation steps (macOS / Windows, developer / demo scenarios). One-time setup is `cd tools && uv sync`.
-
-Activate the `tools/` virtual environment once per terminal, then `pio` works directly:
-
-```bash
-cd tools && source .venv/bin/activate    # macOS / Linux
-# Windows (PowerShell): cd tools; .venv\Scripts\Activate.ps1
-```
-
-After activation:
-
-```bash
-# Float board
-pio run -d ../float -t upload -t monitor
-
-# Ground station board
-pio run -d ../station -t upload -t monitor
-```
-
-| Command                            | Purpose               |
-| ---------------------------------- | --------------------- |
-| `pio run -d ../<board>`            | Build only            |
-| `pio run -d ../<board> -t upload`  | Build + upload        |
-| `pio device monitor --baud 115200` | Serial monitor only   |
-| `pio run -d ../<board> -t clean`   | Clean build artifacts |
-| `pio device list`                  | List connected ports  |
+For the full background on why there are two ports, see the "USB ports — there are two" section in [`CLAUDE.md`](CLAUDE.md).
 
 ## Wireless command reference
 
-While the float is on the surface or just after recovery, send commands to the float by **typing keys into the serial monitor connected to the station** (the Python tool below is recommended). The station firmware turns each single character into a 4-byte ESP-NOW command and forwards it.
+While the float is on the surface or just after recovery, send commands by **typing keys into the station's serial monitor** (opened via `pio device monitor` from inside the activated `tools/` venv — see prerequisites). The station firmware turns each single character into a 4-byte ESP-NOW command and forwards it.
 
 **Wireless commands (station → float, ESP-NOW):**
 
@@ -74,9 +44,7 @@ While the float is on the surface or just after recovery, send commands to the f
 | `I` | Prints file / FS usage           | —                                     |
 | `H` | Re-prints the help message       | —                                     |
 
-The float side automatically ignores commands from other teams via a station MAC whitelist check. The receive callback only sets a flag; heavy work (recalibration, dump) runs in `loop()` to keep ISR safety.
-
-### Typical mission flow (during a run)
+## Typical mission flow (during a run)
 
 Three actors — **Laptop**, **Station** (ground board), and **Float** (submerging board) — cooperate in time order.
 
@@ -87,62 +55,47 @@ Three actors — **Laptop**, **Station** (ground board), and **Float** (submergi
 | #   | Actor           | Action                                                                             | Score    |
 | --- | --------------- | ---------------------------------------------------------------------------------- | -------- |
 | 1   | Station + Float | Boot both boards (USB / battery)                                                   | —        |
-| 2   | Laptop          | Open the station serial via `pio device monitor`                                   | —        |
+| 2   | Laptop          | Open the station serial monitor (terminal 1)                                       | —        |
 | 3   | Operator        | Place the float on the water (surface)                                             | —        |
 | 4   | Laptop          | `Z` → station → ZERO command to float (zero-point calibration at the surface)      | ② 5 pts  |
 | 5   | Operator        | Float dives → runs the mission (2.5 m depth / 40 cm profile)                       | —        |
 | 6   | Float           | No wireless reach → appends only to its own LittleFS every 5 s                     | —        |
 | 7   | Operator        | Float recovered (back to surface) → wireless restored                              | —        |
 | 8   | Laptop          | `D` → station → DUMP command to float → station saves every packet to its LittleFS | ⑤ 10 pts |
-| 9   | Laptop          | Close monitor → `python read_and_graph.py` → produces `received.png` chart         | ⑥ 10 pts |
+| 9   | Laptop          | In terminal 2: `python read_and_graph.py` → produces `received.png` chart          | ⑥ 10 pts |
 
 **Key-input responsibilities:**
 
 - `D` `Z` `P` `S` = the station receives them and forwards via ESP-NOW to the float
 - `R` `E` `I` = handled locally by the station (LittleFS dump / erase / info). Either typed by the operator or sent automatically by the Python tool.
 
-## Data reading + graphing tool (`tools/`)
-
-```bash
-cd tools && source .venv/bin/activate    # one-time per terminal
-
-# No options needed — auto-detects the single attached station, sends R, produces received.log + received.png
-python read_and_graph.py
-```
-
-Behavior:
-
-- Auto-detects the ESP32-S3 USB port (VID=0x303A)
-- Sends a single `R` byte → the station's `received.log` flows out over serial
-- Saves every line to `received.log` (current directory)
-- Stops automatically when it sees the `---- END received.log ----` marker
-- Parses the packets and produces `received.png` (depth-vs-time chart, Y-axis inverted)
-
-**Caution**: The station serial port can only be held by one process at a time. If `pio device monitor` is already running, it will conflict with this tool, so close it first (`pkill -f "pio.*monitor"`).
+See [`docs/prerequisites.md`](docs/prerequisites.md) for the exact two-terminal commands (monitor + graph).
 
 ## Directory structure
 
 ```text
-.
-├── float/
-│   ├── platformio.ini      # Board + MS5837 library
-│   └── src/main.cpp        # Depth · packets · LittleFS · wireless TX/RX
-├── station/
-│   ├── platformio.ini      # Board (no libraries)
-│   └── src/main.cpp        # RX + key input → command TX
-├── tools/
-│   ├── pyproject.toml      # uv project (platformio, pyserial, matplotlib)
-│   ├── uv.lock
-│   └── read_and_graph.py
-├── docs/
-    ├── prerequisites.md
-    └── 2026_MATE_Floats_분석.md
+float/
+├── platformio.ini
+└── src/main.cpp        # Depth · packets · LittleFS · wireless TX/RX
 
+station/
+├── platformio.ini
+└── src/main.cpp        # RX + key input → command TX
+
+tools/
+├── pyproject.toml      # uv project (platformio, pyserial, matplotlib)
+├── uv.lock
+└── read_and_graph.py
+
+docs/
+├── prerequisites.md
+├── Floats.png
+└── 2026_MATE_Floats_분석.md
 ```
 
 ## References
 
-- [Prerequisites](docs/prerequisites.md) — Install instructions for macOS / Windows, developer / competition-day setups
+- [Prerequisites](docs/prerequisites.md) — Install + two-terminal mission flow (macOS / Windows)
 - [Mission analysis](docs/2026_MATE_Floats_분석.md) — Scoring / packet format / physical & electrical constraints
 - [TODO](TODO.md) — Mission backlog + completed decisions
 - [CLAUDE.md](CLAUDE.md) — Dev environment / pitfalls / troubleshooting
