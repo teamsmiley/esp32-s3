@@ -52,6 +52,7 @@ def make_graph(points: list[tuple[int, float]]) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    points = sorted(points, key=lambda p: p[0])
     times, depths = zip(*points)
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(times, depths, marker="o", linewidth=1.5, markersize=4)
@@ -73,7 +74,9 @@ def main() -> None:
     ser.write(b"R")
     print("[capture] 'R' 송신 — dump 대기")
 
-    points: list[tuple[int, float]] = []
+    # 같은 미션 시각의 패킷은 라이브 + DUMP 로 두 번 들어올 수 있어 시각 키로 dedup.
+    by_time: dict[int, float] = {}
+    duplicates = 0
     with LOG_PATH.open("w") as logf:
         while True:
             raw = ser.readline().decode("utf-8", errors="replace")
@@ -84,12 +87,17 @@ def main() -> None:
             logf.write(line + "\n")
             packet = parse_packet(line)
             if packet:
-                points.append(packet)
+                t, depth = packet
+                if t in by_time:
+                    duplicates += 1
+                else:
+                    by_time[t] = depth
             if END_MARKER in line:
                 break
 
     ser.close()
-    print(f"[capture] {LOG_PATH} 저장 — {len(points)} 패킷")
+    points = list(by_time.items())
+    print(f"[capture] {LOG_PATH} 저장 — {len(points)} 유니크 패킷 (중복 {duplicates}개 제거)")
     make_graph(points)
 
 
