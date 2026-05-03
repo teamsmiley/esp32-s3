@@ -9,10 +9,10 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
 
 ## Two boards / two firmwares
 
-| Directory  | Role                                                                          | Dependencies |
-| ---------- | ----------------------------------------------------------------------------- | ------------ |
-| `float/`   | Float board. Depth sensing + packet TX + LittleFS logging + wireless RX       | MS5837       |
-| `station/` | Ground station board. Packet RX + key-input command TX                        | none         |
+| Directory  | Role                                                                    | Dependencies |
+| ---------- | ----------------------------------------------------------------------- | ------------ |
+| `float/`   | Float board. Depth sensing + packet TX + LittleFS logging + wireless RX | MS5837       |
+| `station/` | Ground station board. Packet RX + key-input command TX                  | none         |
 
 ## USB ports
 
@@ -44,13 +44,13 @@ pio run -d ../float -t upload -t monitor
 pio run -d ../station -t upload -t monitor
 ```
 
-| Command                              | Purpose               |
-| ------------------------------------ | --------------------- |
-| `pio run -d ../<board>`              | Build only            |
-| `pio run -d ../<board> -t upload`    | Build + upload        |
-| `pio device monitor --baud 115200`   | Serial monitor only   |
-| `pio run -d ../<board> -t clean`     | Clean build artifacts |
-| `pio device list`                    | List connected ports  |
+| Command                            | Purpose               |
+| ---------------------------------- | --------------------- |
+| `pio run -d ../<board>`            | Build only            |
+| `pio run -d ../<board> -t upload`  | Build + upload        |
+| `pio device monitor --baud 115200` | Serial monitor only   |
+| `pio run -d ../<board> -t clean`   | Clean build artifacts |
+| `pio device list`                  | List connected ports  |
 
 ## Wireless command reference
 
@@ -67,12 +67,12 @@ While the float is on the surface or just after recovery, send commands to the f
 
 **Local commands (handled by the station itself):**
 
-| Key | Action                       | Notes                              |
-| --- | ---------------------------- | ---------------------------------- |
+| Key | Action                           | Notes                                 |
+| --- | -------------------------------- | ------------------------------------- |
 | `R` | Dumps `received.log` over serial | Sent automatically by the Python tool |
-| `E` | Deletes `received.log`           | Cleanup before a new mission       |
-| `I` | Prints file / FS usage           | —                                  |
-| `H` | Re-prints the help message       | —                                  |
+| `E` | Deletes `received.log`           | Cleanup before a new mission          |
+| `I` | Prints file / FS usage           | —                                     |
+| `H` | Re-prints the help message       | —                                     |
 
 The float side automatically ignores commands from other teams via a station MAC whitelist check. The receive callback only sets a flag; heavy work (recalibration, dump) runs in `loop()` to keep ISR safety.
 
@@ -80,57 +80,21 @@ The float side automatically ignores commands from other teams via a station MAC
 
 Three actors — **Laptop**, **Station** (ground board), and **Float** (submerging board) — cooperate in time order.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant L as Laptop
-    participant S as Station
-    participant F as Float (surface)
-    participant W as Float (underwater)
-
-    Note over S,F: Boot both boards + place float on surface
-    L->>S: pio device monitor (open serial)
-    F->>S: [RX] packet every 5s (ESP-NOW)
-    S->>L: [RX] PVPHSROV 00:00:00 ...
-
-    L->>S: press Z
-    S->>F: ZERO (ESP-NOW)
-    F->>F: current depth = recalibrated to zero
-    Note over F: Mission score ② (5 pts)
-
-    Note over F,W: Float dives — wireless out of range
-    W-->>W: appends to LittleFS every 5s
-    Note over W: (station is silent)
-
-    Note over W,F: Float recovered — wireless restored
-    F->>S: [RX] packets resume
-
-    L->>S: press D
-    S->>F: DUMP (ESP-NOW)
-    F->>S: every packet from LittleFS (50 ms apart)
-    S->>S: appends to received.log
-    Note over S: Mission score ⑤ (10 pts)
-
-    L->>L: Ctrl+C closes the monitor
-    L->>S: python read_and_graph.py (auto-sends R)
-    S->>L: received.log dump (over serial)
-    L->>L: generates received.png chart
-    Note over L: Mission score ⑥ (10 pts)
-```
+![Mission flow diagram](docs/Floats.png)
 
 **Step-by-step summary:**
 
-| #   | Actor             | Action                                                                                            | Score    |
-| --- | ----------------- | ------------------------------------------------------------------------------------------------- | -------- |
-| 1   | Station + Float   | Boot both boards (USB / battery)                                                                  | —        |
-| 2   | Laptop            | Open the station serial via `pio device monitor`                                                  | —        |
-| 3   | Operator          | Place the float on the water (surface)                                                            | —        |
-| 4   | Laptop            | `Z` → station → ZERO command to float (zero-point calibration at the surface)                     | ② 5 pts  |
-| 5   | Operator          | Float dives → runs the mission (2.5 m depth / 40 cm profile)                                      | —        |
-| 6   | Float             | No wireless reach → appends only to its own LittleFS every 5 s                                    | —        |
-| 7   | Operator          | Float recovered (back to surface) → wireless restored                                             | —        |
-| 8   | Laptop            | `D` → station → DUMP command to float → station saves every packet to its LittleFS               | ⑤ 10 pts |
-| 9   | Laptop            | Close monitor → `python read_and_graph.py` → produces `received.png` chart                        | ⑥ 10 pts |
+| #   | Actor           | Action                                                                             | Score    |
+| --- | --------------- | ---------------------------------------------------------------------------------- | -------- |
+| 1   | Station + Float | Boot both boards (USB / battery)                                                   | —        |
+| 2   | Laptop          | Open the station serial via `pio device monitor`                                   | —        |
+| 3   | Operator        | Place the float on the water (surface)                                             | —        |
+| 4   | Laptop          | `Z` → station → ZERO command to float (zero-point calibration at the surface)      | ② 5 pts  |
+| 5   | Operator        | Float dives → runs the mission (2.5 m depth / 40 cm profile)                       | —        |
+| 6   | Float           | No wireless reach → appends only to its own LittleFS every 5 s                     | —        |
+| 7   | Operator        | Float recovered (back to surface) → wireless restored                              | —        |
+| 8   | Laptop          | `D` → station → DUMP command to float → station saves every packet to its LittleFS | ⑤ 10 pts |
+| 9   | Laptop          | Close monitor → `python read_and_graph.py` → produces `received.png` chart         | ⑥ 10 pts |
 
 **Key-input responsibilities:**
 
@@ -171,12 +135,9 @@ Behavior:
 │   ├── uv.lock
 │   └── read_and_graph.py
 ├── docs/
-│   ├── prerequisites.md
-│   └── 2026_MATE_Floats_분석.md
-├── examples/               # Older learning-stage code (LED, button, toggle)
-├── CLAUDE.md               # Dev guide (board setup, pitfalls, troubleshooting)
-├── TODO.md                 # Mission backlog + completion log
-└── README.md
+    ├── prerequisites.md
+    └── 2026_MATE_Floats_분석.md
+
 ```
 
 ## References
