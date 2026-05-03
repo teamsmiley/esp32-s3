@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""MATE Floats 2026 — station 의 received.log 를 USB 로 읽어와 그래프 PNG 생성.
+"""MATE Floats 2026 — pull the station's received.log over USB and produce a graph PNG.
 
-흐름 (옵션 없이 한 번 실행):
-  1. ESP32-S3 USB 포트 자동 탐지
-  2. 시리얼 열고 'R' 송신 (station 의 dump 트리거)
-  3. station 이 흘려보내는 라인들을 received.log 에 저장
-  4. '---- END received.log ----' 만나면 자동 종료
-  5. 패킷을 파싱해 received.png (수심-시간 그래프) 생성
+Flow (no options, run once):
+  1. Auto-detect the ESP32-S3 USB port
+  2. Open the serial port and send 'R' (triggers the station dump)
+  3. Save the lines the station streams back into received.log
+  4. Stop automatically when '---- END received.log ----' is seen
+  5. Parse the packets and produce received.png (depth-vs-time graph)
 
-사용:
+Usage:
   uv run read_and_graph.py
 """
 import re
@@ -33,8 +33,8 @@ def autodetect_port() -> str:
         print(f"[port] {candidates[0].device}")
         return candidates[0].device
     if not candidates:
-        sys.exit("[error] ESP32-S3 USB 장치 없음. 케이블이 'USB' 라벨 포트인지 확인.")
-    sys.exit(f"[error] ESP32-S3 USB 장치 여러 개: {[p.device for p in candidates]}")
+        sys.exit("[error] no ESP32-S3 USB device found. Make sure the cable is in the 'USB'-labeled port.")
+    sys.exit(f"[error] multiple ESP32-S3 USB devices: {[p.device for p in candidates]}")
 
 
 def parse_packet(line: str):
@@ -47,7 +47,7 @@ def parse_packet(line: str):
 
 def make_graph(points: list[tuple[int, float]]) -> None:
     if not points:
-        print("[graph] 패킷 0개 — 그래프 생략")
+        print("[graph] no packets — skipping graph")
         return
     import matplotlib
     matplotlib.use("Agg")
@@ -63,18 +63,18 @@ def make_graph(points: list[tuple[int, float]]) -> None:
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(PNG_PATH, dpi=150)
-    print(f"[graph] {PNG_PATH} 저장 ({len(points)} 패킷)")
+    print(f"[graph] saved {PNG_PATH} ({len(points)} packets)")
 
 
 def main() -> None:
     import serial
     port = autodetect_port()
     ser = serial.Serial(port, 115200, timeout=2)
-    time.sleep(1.0)  # USB-CDC 재열거 안정화
+    time.sleep(1.0)  # let USB-CDC re-enumeration settle
     ser.write(b"R")
-    print("[capture] 'R' 송신 — dump 대기")
+    print("[capture] sent 'R' — waiting for dump")
 
-    # 같은 미션 시각의 패킷은 라이브 + DUMP 로 두 번 들어올 수 있어 시각 키로 dedup.
+    # Same mission timestamp may arrive twice (live + DUMP), so dedup by time key.
     by_time: dict[int, float] = {}
     duplicates = 0
     with LOG_PATH.open("w") as logf:
@@ -97,7 +97,7 @@ def main() -> None:
 
     ser.close()
     points = list(by_time.items())
-    print(f"[capture] {LOG_PATH} 저장 — {len(points)} 유니크 패킷 (중복 {duplicates}개 제거)")
+    print(f"[capture] saved {LOG_PATH} — {len(points)} unique packets ({duplicates} duplicate(s) dropped)")
     make_graph(points)
 
 
