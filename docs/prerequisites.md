@@ -81,11 +81,11 @@ python read_and_graph.py
 
 **Key reference:**
 
-| Key | When to press                          | Effect                                                    | Score    |
-| --- | -------------------------------------- | --------------------------------------------------------- | -------- |
-| `Z` | Right after placing float on surface   | Recalibrate depth zero (`[RX] ZERO_OK ...` response)      | ② 5 pts  |
-| `D` | After recovering float (back on surface) | Pulls float's entire mission.log over to the station      | ⑤ 10 pts |
-| —   | After dump completes, Ctrl+C → graph   | Produces `received.png`                                   | ⑥ 10 pts |
+| Key | When to press                            | Effect                                                | Score    |
+| --- | ---------------------------------------- | ----------------------------------------------------- | -------- |
+| `Z` | Right after placing float on surface     | Recalibrate depth zero (`[RX] ZERO_OK ...` response)  | ② 5 pts  |
+| `D` | After recovering float (back on surface) | Pulls float's entire mission.log over to the station  | ⑤ 10 pts |
+| —   | After dump completes, Ctrl+C → graph     | Produces `received.png`                               | ⑥ 10 pts |
 
 ---
 
