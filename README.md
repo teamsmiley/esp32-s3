@@ -53,7 +53,9 @@ cd station && pio run -t upload -t monitor --upload-port /dev/cu.usbmodemBBBB
 
 ## 무선 명령어 사용법
 
-플로트가 물에 떠 있거나 회수된 직후, **station 시리얼 모니터에 키 입력** 으로 float 에 명령을 보냅니다. 모든 명령은 4 byte 텍스트로 통일.
+플로트가 물에 떠 있거나 회수된 직후, **station 에 연결된 시리얼 모니터(아래 Python 도구 권장)에 키 입력** 으로 float 에 명령을 보냅니다. station 펌웨어가 단일 문자를 받아 ESP-NOW 4-byte 명령으로 변환·전달.
+
+**무선 명령 (station → float, ESP-NOW):**
 
 | 키 | 송신 명령 | float 동작 | 응답 (station 시리얼) |
 | -- | --------- | ---------- | ---------------------- |
@@ -61,31 +63,79 @@ cd station && pio run -t upload -t monitor --upload-port /dev/cu.usbmodemBBBB
 | `Z` | `ZERO` | 깊이 0점 재보정 (16회 평균) + 미션 시간 리셋 | `[RX] ZERO_OK offset=X.XXXX m` |
 | `P` | `PING` | 연결 확인 회신 | `[RX] PONG` |
 | `S` | `STAR` (=START) | 자율 시퀀스 시작 트리거 (현재 stub) | `[RX] START_STUB` |
-| `H` | (로컬) | 도움말 다시 출력 | — |
+
+**로컬 명령 (station 자체 처리):**
+
+| 키 | 동작 | 비고 |
+| -- | ---- | ---- |
+| `R` | `received.log` 시리얼 dump | Python 도구가 자동 송신 |
+| `E` | `received.log` 삭제 | 새 미션 전 정리 |
+| `I` | 파일/FS 사용량 출력 | — |
+| `H` | 도움말 다시 출력 | — |
 
 float 측은 station MAC 화이트리스트 검사로 다른 팀 명령을 자동 무시. 콜백에선 플래그만 set 하고 무거운 작업 (재보정·dump) 은 `loop()` 에서 처리해 ISR 안전성 확보.
 
 ### 일반적인 미션 흐름 (시연 시)
 
-1. 플로트를 물에 띄움 → `pio device monitor` 로 station 시리얼 보면 패킷이 5초마다 들어옴
-2. 배포 직전 station 모니터에서 `Z` (ZERO) → 수면을 정확히 0점으로
-3. 배포 직전 마지막 패킷 1회 = **미션 점수 ② (5점)**
-4. 플로트 잠수 → 무선 도달 안 됨. 디스크에 5초마다 누적 (LittleFS)
-5. 플로트 회수 → 다시 무선 도달
-6. **station 모니터 닫고** Python 도구로 dump 캡처 = **미션 점수 ⑤ (10점)**:
-   ```bash
-   cd tools && uv run capture_and_graph.py --send-cmd DUMP
-   ```
-   도구가 자동으로 DUMP 명령 송신 → 패킷을 `mission.csv` 로 저장
-7. dump 끝나면 (패킷 더 안 들어오면) `Ctrl+C` → `mission.png` 자동 생성 = **미션 점수 ⑥ (10점)**
+세 행위자 — **Laptop**, **Station** (지상국 보드), **Float** (잠수 보드) — 가 시간 순으로 협력합니다.
 
-**주의**: 시연 중 station 모니터에서 손으로 `D` 누르지 마세요 — 패킷이 화면에만 출력되고 CSV 에 안 남습니다. 손으로 누르는 건 개발 디버깅용. 시연 본번은 항상 Python 의 `--send-cmd DUMP` 경유.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as Laptop
+    participant S as Station
+    participant F as Float (수면)
+    participant W as Float (수중)
 
-(만약 실수로 손으로 D 를 먼저 눌렀어도 데이터는 float LittleFS 에 그대로 살아있으니 모니터 닫고 Python 도구로 다시 dump 하면 됨.)
+    Note over S,F: 두 보드 부팅 + 수면에 띄움
+    L->>S: pio device monitor (시리얼 열기)
+    F->>S: [RX] 5초마다 패킷 (ESP-NOW)
+    S->>L: [RX] PVPHSROV 00:00:00 ...
 
-## 데이터 캡처 + 그래프 도구 (`tools/`)
+    L->>S: Z 키 입력
+    S->>F: ZERO (ESP-NOW)
+    F->>F: 현재 깊이 = 0점으로 재보정
+    Note over F: 미션 점수 ② (5점)
 
-회수 후 station 에 들어온 패킷을 컴퓨터에서 받아 **CSV 누적 + 수심-시간 그래프 PNG** 까지 한 번에 만드는 Python 도구. 미션 점수 ⑥ (수심-시간 그래프) 의 토대.
+    Note over F,W: Float 잠수 — 무선 도달 불가
+    W-->>W: 5초마다 LittleFS 에 누적
+    Note over W: (station 은 침묵)
+
+    Note over W,F: Float 회수 — 무선 복구
+    F->>S: [RX] 패킷 재개
+
+    L->>S: D 키 입력
+    S->>F: DUMP (ESP-NOW)
+    F->>S: LittleFS 의 모든 패킷 (50ms 간격)
+    S->>S: received.log 에 누적 저장
+    Note over S: 미션 점수 ⑤ (10점)
+
+    L->>L: Ctrl+C 로 모니터 종료
+    L->>S: uv run read_and_graph.py (R 자동 송신)
+    S->>L: received.log dump (시리얼)
+    L->>L: received.png 그래프 생성
+    Note over L: 미션 점수 ⑥ (10점)
+```
+
+**단계별 요약:**
+
+| # | 행위자 | 동작 | 점수 |
+|---|---|---|---|
+| 1 | Station + Float | 두 보드 부팅 (USB / 배터리) | — |
+| 2 | Laptop | `pio device monitor` 로 station 시리얼 열기 | — |
+| 3 | 사람 | float 을 물에 띄움 (수면) | — |
+| 4 | Laptop | `Z` 키 → station → float 으로 ZERO 명령 (수면 0점 재보정) | ② 5점 |
+| 5 | 사람 | float 잠수 → 미션 수행 (수심 2.5m / 40cm 프로파일) | — |
+| 6 | Float | 무선 도달 안 됨 → 자기 LittleFS 에만 5초마다 누적 | — |
+| 7 | 사람 | float 회수 (수면) → 무선 복구 | — |
+| 8 | Laptop | `D` 키 → station → float 으로 DUMP 명령 → station LittleFS 에 모든 패킷 저장 | ⑤ 10점 |
+| 9 | Laptop | 모니터 종료 → `cd tools && uv run read_and_graph.py` → `received.log` + `received.png` | ⑥ 10점 |
+
+**키 입력 분담:**
+- `D` `Z` `P` `S` = station 이 받아서 ESP-NOW 로 float 에 전달
+- `R` `E` `I` = station 로컬 (LittleFS dump/erase/info). 사람이 직접 누르거나 Python 이 자동 송신
+
+## 데이터 읽기 + 그래프 도구 (`tools/`)
 
 ```bash
 cd tools
@@ -93,28 +143,18 @@ cd tools
 # 첫 실행만: 의존성 sync (uv 가 .venv 자동 생성 + 설치)
 uv sync
 
-# 시연 본 흐름: station 한 개만 꽂힌 상태에서 자동 탐지 + DUMP 자동 송신
-uv run capture_and_graph.py --send-cmd DUMP
-# Ctrl+C → mission.csv 저장 + mission.png 그래프 생성
-
-# 양쪽 보드 다 꽂혔을 때: --list-ports 로 MAC 확인 후 명시
-uv run capture_and_graph.py --list-ports
-uv run capture_and_graph.py --port /dev/cu.usbmodemXXXX --send-cmd DUMP
-
-# 시리얼 없이 기존 CSV → PNG 재생성
-uv run capture_and_graph.py --csv mission.csv --png mission.png --replot
+# 옵션 없음 — station 한 개만 꽂으면 자동 탐지 → R 송신 → received.log + received.png 생성
+uv run read_and_graph.py
 ```
 
-| 옵션 | 기본값 | 용도 |
-| ---- | ------ | ---- |
-| `--port` | (자동 탐지) | ESP32-S3 USB (VID=0x303A) 1 개면 자동 선택 |
-| `--csv` | `mission.csv` | append 모드 — 새 미션 전 기존 파일 삭제 권장 |
-| `--png` | `mission.png` | Y축 반전(깊이↓), 데이터 포인트 수 라벨 |
-| `--send-cmd` | (없음) | 접속 직후 송신할 명령 (`DUMP`, `PING` 등) |
-| `--replot` | `false` | 시리얼 사용 안 하고 CSV → PNG 만 |
-| `--list-ports` | — | ESP32-S3 USB 포트 나열 (serial 필드에 MAC 노출) |
+동작:
+- ESP32-S3 USB 포트 자동 탐지 (VID=0x303A)
+- `R` 한 글자 송신 → station 의 `received.log` 가 시리얼로 흘러나옴
+- 모든 라인을 `received.log` (현재 디렉토리) 에 저장
+- `---- END received.log ----` 마커 보면 자동 종료
+- 패킷을 파싱해 `received.png` (수심-시간 그래프, Y축 반전) 생성
 
-**주의**: station 시리얼은 한 번에 한 프로세스만 점유 가능 — `pio device monitor` 와 동시에 실행하면 충돌. 시연 전에는 모니터 닫고 이 도구만 띄우세요.
+**주의**: station 시리얼은 한 번에 한 프로세스만 점유 가능. 이 도구를 띄우기 전에 `pio device monitor` 가 떠있으면 충돌하므로 종료 필요 (`pkill -f "pio.*monitor"`).
 
 ## 디렉토리 구조
 
@@ -129,7 +169,7 @@ uv run capture_and_graph.py --csv mission.csv --png mission.png --replot
 ├── tools/
 │   ├── pyproject.toml      # uv 프로젝트 (pyserial, matplotlib)
 │   ├── uv.lock
-│   └── capture_and_graph.py
+│   └── read_and_graph.py
 ├── docs/
 │   └── 2026_MATE_Floats_분석.md
 ├── examples/               # 과거 학습 단계 코드 (LED, 버튼, 토글)

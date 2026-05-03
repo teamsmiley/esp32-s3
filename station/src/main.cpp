@@ -1,17 +1,33 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <LittleFS.h>
 
 // 지상국 — float 으로부터 미션 패킷을 받고, 키 입력으로 명령을 송신.
+// 수신한 모든 패킷은 LittleFS 의 received.log 에 append (E 키로만 지움).
 
 // 우리 팀 float 보드의 MAC — 송신 대상 + 수신 화이트리스트
 uint8_t FLOAT_MAC[6] = {0xAC, 0xA7, 0x04, 0xEE, 0x43, 0xB0};
+
+static const char *RX_LOG = "/received.log";
+static bool fsReady = false;
 
 static bool isOurFloat(const uint8_t *mac) {
   for (int i = 0; i < 6; i++) {
     if (mac[i] != FLOAT_MAC[i]) return false;
   }
   return true;
+}
+
+void appendRxLog(const char *line) {
+  if (!fsReady) return;
+  File f = LittleFS.open(RX_LOG, "a");
+  if (!f) {
+    Serial.println("[LittleFS] open(append) 실패");
+    return;
+  }
+  f.println(line);
+  f.close();
 }
 
 void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
@@ -25,6 +41,7 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   memcpy(buf, data, copyLen);
   buf[copyLen] = '\0';
   Serial.printf("[RX] %s\n", buf);
+  appendRxLog(buf);
 }
 
 void onEspNowSent(const uint8_t *mac, esp_now_send_status_t status) {
@@ -37,6 +54,66 @@ void sendCommand(const char *cmd) {
   esp_now_send(FLOAT_MAC, (const uint8_t *)cmd, strlen(cmd));
 }
 
+void setupLittleFS() {
+  Serial.println("[LittleFS] 마운트 시도...");
+  if (!LittleFS.begin(true)) {  // true = 마운트 실패 시 자동 포맷
+    Serial.println("[LittleFS] 마운트 실패 — 수신 로그 비활성화");
+    return;
+  }
+  fsReady = true;
+  size_t logSize = LittleFS.exists(RX_LOG) ? LittleFS.open(RX_LOG, "r").size() : 0;
+  Serial.printf("[LittleFS] 준비 완료 — %u / %u bytes 사용 (received.log: %u bytes)\n",
+                LittleFS.usedBytes(), LittleFS.totalBytes(), logSize);
+}
+
+void readRxLog() {
+  if (!fsReady) {
+    Serial.println("[read] LittleFS 준비 안 됨");
+    return;
+  }
+  File f = LittleFS.open(RX_LOG, "r");
+  if (!f) {
+    Serial.println("[read] received.log 없음");
+    return;
+  }
+  Serial.printf("[read] 시작 — %u bytes\n", f.size());
+  Serial.println("---- BEGIN received.log ----");
+  while (f.available()) {
+    Serial.write(f.read());
+  }
+  f.close();
+  Serial.println("---- END received.log ----");
+  Serial.println("[read] 완료");
+}
+
+void eraseRxLog() {
+  if (!fsReady) {
+    Serial.println("[erase] LittleFS 준비 안 됨");
+    return;
+  }
+  if (LittleFS.exists(RX_LOG)) {
+    LittleFS.remove(RX_LOG);
+    Serial.println("[erase] received.log 삭제 완료");
+  } else {
+    Serial.println("[erase] received.log 없음");
+  }
+}
+
+void infoRxLog() {
+  if (!fsReady) {
+    Serial.println("[info] LittleFS 준비 안 됨");
+    return;
+  }
+  size_t logSize = 0;
+  if (LittleFS.exists(RX_LOG)) {
+    File f = LittleFS.open(RX_LOG, "r");
+    logSize = f.size();
+    f.close();
+  }
+  Serial.printf("[info] received.log: %u bytes, FS %u / %u bytes 사용\n",
+                logSize, LittleFS.usedBytes(), LittleFS.totalBytes());
+}
+
 void printHelp() {
   Serial.println("--------------------------------");
   Serial.println(" 키 입력 → float 명령:");
@@ -44,6 +121,10 @@ void printHelp() {
   Serial.println("   Z = ZERO   (깊이 0점 재보정)");
   Serial.println("   P = PING   (연결 확인)");
   Serial.println("   S = START  (자율 시퀀스 시작 — stub)");
+  Serial.println(" 키 입력 → station 로컬:");
+  Serial.println("   R = READ   (received.log 시리얼 출력)");
+  Serial.println("   E = ERASE  (received.log 삭제)");
+  Serial.println("   I = INFO   (파일 / FS 사용량)");
   Serial.println("   H = HELP   (이 메시지 다시 보기)");
   Serial.println("--------------------------------");
 }
@@ -52,6 +133,8 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   Serial.println("=== Station (지상국) ===");
+
+  setupLittleFS();
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -89,6 +172,9 @@ void loop() {
       case 'Z': case 'z': sendCommand("ZERO"); break;
       case 'P': case 'p': sendCommand("PING"); break;
       case 'S': case 's': sendCommand("STAR"); break;  // 4 byte 명령용 줄임
+      case 'R': case 'r': readRxLog(); break;
+      case 'E': case 'e': eraseRxLog(); break;
+      case 'I': case 'i': infoRxLog(); break;
       case 'H': case 'h': printHelp(); break;
       case '\n': case '\r': break;  // 개행은 무시
       default:
