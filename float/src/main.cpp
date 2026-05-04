@@ -3,7 +3,13 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <LittleFS.h>
+
+// Set to 0 to skip MS5837 init/reads (debug ESP-NOW + motor without the sensor wired).
+#define USE_DEPTH_SENSOR 1
+
+#if USE_DEPTH_SENSOR
 #include "MS5837.h"
+#endif
 
 #define LOG_FILE   "/mission.log"
 #define LOG_BACKUP "/mission.log.bak"
@@ -13,6 +19,34 @@
 #define I2C_SCL 9
 #define BOOT_BUTTON 0
 
+// L298N Motor B (OUT3/OUT4) with PWM speed control on ENB.
+// Descent (water intake): IN3=HIGH, IN4=LOW.   Ascent (water eject): IN3=LOW, IN4=HIGH.
+// ENB jumper REMOVED — GPIO4 drives ENB with PWM (0=stop, 255=full).
+#define MOTOR_IN3 17
+#define MOTOR_IN4 18
+#define MOTOR_ENB 4
+
+#define MOTOR_SPEED_FULL  255   // DESCEND / ASCEND / SURFACE legs
+#define MOTOR_SPEED_HOLD   90   // gentle corrections during HOLD bands (~35%)
+
+// Float geometry. Sensor is at the midpoint of a 12-inch (30.48 cm) tall float.
+// All mission depth values below are expressed as the float BOTTOM's depth.
+#define FLOAT_HEIGHT_M            0.3048f   // 12 in
+#define SENSOR_OFFSET_FROM_BOTTOM 0.1524f   //  6 in (sensor->bottom distance)
+
+// Mission profile parameters (MATE Floats 2026), all bottom-referenced.
+// Deep band:    bottom 2.27 ~ 2.83 m  (rule states "2.5m at the bottom, ±33 cm")
+// Shallow band: top    0.07 ~ 0.73 m  -> bottom = top + FLOAT_HEIGHT_M
+#define DEEP_MIN_M       2.27f
+#define DEEP_MAX_M       2.83f
+#define SHALLOW_MIN_M    (0.07f + FLOAT_HEIGHT_M)  // 0.3748 m
+#define SHALLOW_MAX_M    (0.73f + FLOAT_HEIGHT_M)  // 1.0348 m
+#define HOLD_DURATION_MS 30000UL
+#define SURFACE_M        0.10f       // bottom-depth at which we consider float "back at surface"
+#define PROFILE_COUNT    3
+#define MAX_DEPTH_M      3.20f       // emergency stop threshold (bottom)
+#define STATE_TIMEOUT_MS 90000UL     // per-state watchdog (descend/ascend)
+
 #define COMPANY_NUMBER "PVPHSROV"
 #define FLUID_DENSITY 997.0f  // freshwater kg/m^3 (seawater would be 1029.0)
 #define READ_INTERVAL_MS 500
@@ -20,7 +54,9 @@
 #define ZERO_SAMPLES 16       // samples to average for zero calibration
 #define ZERO_SAMPLE_DELAY_MS 50
 
+#if USE_DEPTH_SENSOR
 MS5837 sensor;
+#endif
 float depthOffset = 0.0f;     // zero-calibration offset (m)
 unsigned long missionStartMs = 0;
 unsigned long nextPacketMs = 0;
@@ -41,6 +77,242 @@ int lastButtonState = HIGH;
 unsigned long lastDebounceMs = 0;
 const unsigned long DEBOUNCE_MS = 50;
 
+// Motor direction + speed. We track last (dir, speed) to suppress redundant log spam.
+enum MotorDir { MOTOR_OFF, MOTOR_DESCEND, MOTOR_ASCEND };
+MotorDir motorDir = MOTOR_OFF;
+int motorSpeed = 0;
+
+void motorSetSpeed(MotorDir dir, int speed) {
+  if (speed < 0) speed = 0;
+  if (speed > 255) speed = 255;
+
+  bool changed = (dir != motorDir) || (speed != motorSpeed);
+
+  switch (dir) {
+    case MOTOR_DESCEND:
+      digitalWrite(MOTOR_IN3, HIGH);
+      digitalWrite(MOTOR_IN4, LOW);
+      analogWrite(MOTOR_ENB, speed);
+      break;
+    case MOTOR_ASCEND:
+      digitalWrite(MOTOR_IN3, LOW);
+      digitalWrite(MOTOR_IN4, HIGH);
+      analogWrite(MOTOR_ENB, speed);
+      break;
+    case MOTOR_OFF:
+    default:
+      digitalWrite(MOTOR_IN3, LOW);
+      digitalWrite(MOTOR_IN4, LOW);
+      analogWrite(MOTOR_ENB, 0);
+      speed = 0;
+      break;
+  }
+
+  // Only log on direction change to keep ramp test output readable.
+  if (changed && dir != motorDir) {
+    const char *name = dir == MOTOR_DESCEND ? "DESCEND (intake)"
+                     : dir == MOTOR_ASCEND  ? "ASCEND (eject)"
+                                            : "OFF";
+    Serial.printf("[MOTOR] %s (speed=%d)\n", name, speed);
+  }
+
+  motorDir = dir;
+  motorSpeed = speed;
+}
+
+// Convenience wrappers (full-speed by default for legacy call sites)
+void motorSet(MotorDir dir) { motorSetSpeed(dir, MOTOR_SPEED_FULL); }
+void motorStop() { motorSetSpeed(MOTOR_OFF, 0); }
+
+// Mission state machine
+enum MissionState {
+  MS_IDLE,             // surface, awaiting trigger
+  MS_DESCEND,          // motor intake until depth >= DEEP_MIN_M
+  MS_HOLD_DEEP,        // bang-bang at 2.5m for 30s
+  MS_ASCEND_SHALLOW,   // motor eject until depth <= SHALLOW_MAX_M
+  MS_HOLD_SHALLOW,     // bang-bang at 40cm for 30s
+  MS_SURFACE,          // motor eject until depth <= SURFACE_M
+  MS_DONE              // all profiles complete
+};
+MissionState missionState = MS_IDLE;
+int profileIndex = 0;          // 0..PROFILE_COUNT-1
+unsigned long stateStartMs = 0;
+unsigned long holdStartMs = 0;  // restarts whenever depth leaves the band
+
+const char *stateName(MissionState s) {
+  switch (s) {
+    case MS_IDLE:           return "IDLE";
+    case MS_DESCEND:        return "DESCEND";
+    case MS_HOLD_DEEP:      return "HOLD_DEEP";
+    case MS_ASCEND_SHALLOW: return "ASCEND_SHALLOW";
+    case MS_HOLD_SHALLOW:   return "HOLD_SHALLOW";
+    case MS_SURFACE:        return "SURFACE";
+    case MS_DONE:           return "DONE";
+  }
+  return "?";
+}
+
+void enterState(MissionState s) {
+  missionState = s;
+  stateStartMs = millis();
+  holdStartMs = 0;
+  Serial.printf("[STATE] -> %s (profile %d/%d)\n",
+                stateName(s), profileIndex + 1, PROFILE_COUNT);
+}
+
+void missionStart() {
+  profileIndex = 0;
+  enterState(MS_DESCEND);
+}
+
+// Speed ramp self-test: 0 -> 255 over 5 s (descend dir), then 255 -> 0 over 5 s. Total 10 s.
+// Lets you watch the motor accelerate/decelerate to verify PWM wiring on ENB.
+#define RAMP_TEST_DURATION_MS 10000UL
+bool rampTestActive = false;
+unsigned long rampTestStartMs = 0;
+unsigned long rampTestLastLogMs = 0;
+
+void rampTestStart() {
+  rampTestActive = true;
+  rampTestStartMs = millis();
+  rampTestLastLogMs = 0;
+  Serial.println("[TEST] speed ramp 0->255->0 over 10s (descend direction)");
+}
+
+void rampTestTick() {
+  if (!rampTestActive) return;
+
+  unsigned long elapsed = millis() - rampTestStartMs;
+  if (elapsed >= RAMP_TEST_DURATION_MS) {
+    motorStop();
+    rampTestActive = false;
+    Serial.println("[TEST] ramp complete");
+    return;
+  }
+
+  // Triangle ramp
+  int speed;
+  if (elapsed < RAMP_TEST_DURATION_MS / 2) {
+    speed = (int)((elapsed * 255) / (RAMP_TEST_DURATION_MS / 2));
+  } else {
+    speed = (int)(((RAMP_TEST_DURATION_MS - elapsed) * 255) / (RAMP_TEST_DURATION_MS / 2));
+  }
+  // Drive ENB directly so logs aren't spammed by motorSetSpeed's direction-change branch.
+  digitalWrite(MOTOR_IN3, HIGH);
+  digitalWrite(MOTOR_IN4, LOW);
+  analogWrite(MOTOR_ENB, speed);
+  motorDir = MOTOR_DESCEND;
+  motorSpeed = speed;
+
+  if (millis() - rampTestLastLogMs >= 500) {
+    Serial.printf("[TEST] t=%lu ms  speed=%d/255\n", elapsed, speed);
+    rampTestLastLogMs = millis();
+  }
+}
+
+// Bang-bang depth controller for HOLD states. Returns true while depth is inside the band.
+// Corrections use MOTOR_SPEED_HOLD (gentle) to avoid overshoot that would reset the 30s timer.
+bool holdControl(float depth, float lo, float hi) {
+  if (depth < lo) {
+    motorSetSpeed(MOTOR_DESCEND, MOTOR_SPEED_HOLD);
+    return false;
+  }
+  if (depth > hi) {
+    motorSetSpeed(MOTOR_ASCEND, MOTOR_SPEED_HOLD);
+    return false;
+  }
+  motorSetSpeed(MOTOR_OFF, 0);
+  return true;
+}
+
+void missionTick(float depth) {
+  if (missionState == MS_IDLE || missionState == MS_DONE) {
+    motorStop();
+    return;
+  }
+
+  // Emergency: too deep -> force ascent regardless of state
+  if (depth > MAX_DEPTH_M) {
+    Serial.printf("[SAFETY] depth %.2f m > %.2f m — emergency ascent\n", depth, MAX_DEPTH_M);
+    motorSet(MOTOR_ASCEND);
+    enterState(MS_SURFACE);
+    return;
+  }
+
+  // Per-state watchdog (descent/ascent transit only)
+  bool isTransit = (missionState == MS_DESCEND ||
+                    missionState == MS_ASCEND_SHALLOW ||
+                    missionState == MS_SURFACE);
+  if (isTransit && (millis() - stateStartMs) > STATE_TIMEOUT_MS) {
+    Serial.printf("[SAFETY] %s timeout — forcing surface\n", stateName(missionState));
+    motorSet(MOTOR_ASCEND);
+    enterState(MS_SURFACE);
+    return;
+  }
+
+  switch (missionState) {
+    case MS_DESCEND:
+      motorSet(MOTOR_DESCEND);
+      if (depth >= DEEP_MIN_M) enterState(MS_HOLD_DEEP);
+      break;
+
+    case MS_HOLD_DEEP: {
+      bool inBand = holdControl(depth, DEEP_MIN_M, DEEP_MAX_M);
+      if (inBand) {
+        if (holdStartMs == 0) holdStartMs = millis();
+        if (millis() - holdStartMs >= HOLD_DURATION_MS) {
+          enterState(MS_ASCEND_SHALLOW);
+        }
+      } else {
+        if (holdStartMs != 0) {
+          Serial.println("[HOLD_DEEP] band exit — restart 30s timer");
+        }
+        holdStartMs = 0;
+      }
+      break;
+    }
+
+    case MS_ASCEND_SHALLOW:
+      motorSet(MOTOR_ASCEND);
+      if (depth <= SHALLOW_MAX_M) enterState(MS_HOLD_SHALLOW);
+      break;
+
+    case MS_HOLD_SHALLOW: {
+      bool inBand = holdControl(depth, SHALLOW_MIN_M, SHALLOW_MAX_M);
+      if (inBand) {
+        if (holdStartMs == 0) holdStartMs = millis();
+        if (millis() - holdStartMs >= HOLD_DURATION_MS) {
+          enterState(MS_SURFACE);
+        }
+      } else {
+        if (holdStartMs != 0) {
+          Serial.println("[HOLD_SHALLOW] band exit — restart 30s timer");
+        }
+        holdStartMs = 0;
+      }
+      break;
+    }
+
+    case MS_SURFACE:
+      motorSet(MOTOR_ASCEND);
+      if (depth <= SURFACE_M) {
+        motorStop();
+        profileIndex++;
+        if (profileIndex >= PROFILE_COUNT) {
+          Serial.printf("[MISSION] all %d profiles complete\n", PROFILE_COUNT);
+          if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"MISSION_DONE", 12);
+          enterState(MS_DONE);
+        } else {
+          Serial.printf("[MISSION] profile %d done — starting next\n", profileIndex);
+          enterState(MS_DESCEND);
+        }
+      }
+      break;
+
+    default: break;
+  }
+}
+
 void scanI2C() {
   Serial.println("[I2C scan start]");
   int found = 0;
@@ -59,6 +331,7 @@ void scanI2C() {
 
 // Calibrate the current position as depth 0 m.
 void calibrateZero() {
+#if USE_DEPTH_SENSOR
   Serial.printf("[zero calibration start — averaging %d samples]\n", ZERO_SAMPLES);
   double sum = 0.0;
   for (int i = 0; i < ZERO_SAMPLES; i++) {
@@ -71,11 +344,25 @@ void calibrateZero() {
   depthOffset = (float)(sum / ZERO_SAMPLES);
   Serial.printf("[zero calibration done] offset = %.4f m\n", depthOffset);
   Serial.println();
+#else
+  depthOffset = 0.0f;
+  Serial.println("[zero calibration SKIPPED — USE_DEPTH_SENSOR=0]");
+#endif
 }
 
-// Calibrated depth (surface = 0, positive when submerged)
+// Calibrated depth at the SENSOR position (surface = 0, positive when submerged).
 float calibratedDepth() {
+#if USE_DEPTH_SENSOR
   return sensor.depth() - depthOffset;
+#else
+  return 0.0f;
+#endif
+}
+
+// Float-bottom depth (mission reference for both deep and shallow holds).
+// All packet values, mission state machine inputs, and graphs use this.
+float reportedDepth() {
+  return calibratedDepth() + SENSOR_OFFSET_FROM_BOTTOM;
 }
 
 // Convert elapsed ms since boot to HH:MM:SS
@@ -92,8 +379,13 @@ void formatElapsed(unsigned long elapsedMs, char *out, size_t outLen) {
 void formatPacket(char *out, size_t outLen) {
   char timeStr[16];
   formatElapsed(millis() - missionStartMs, timeStr, sizeof(timeStr));
+#if USE_DEPTH_SENSOR
   float kPa = sensor.pressure() * 0.1f;  // mbar -> kPa
-  float depthM = calibratedDepth();
+#else
+  float kPa = 0.0f;
+#endif
+  // Reported depth is the float BOTTOM (sensor reading + 6 in offset).
+  float depthM = reportedDepth();
   snprintf(out, outLen, "%s %s %.1f kPa %.2f meters",
            COMPANY_NUMBER, timeStr, kPa, depthM);
 }
@@ -214,6 +506,12 @@ void setup() {
   Serial.printf("I2C pins: SDA=GPIO%d, SCL=GPIO%d\n", I2C_SDA, I2C_SCL);
 
   pinMode(BOOT_BUTTON, INPUT_PULLUP);
+  pinMode(MOTOR_IN3, OUTPUT);
+  pinMode(MOTOR_IN4, OUTPUT);
+  pinMode(MOTOR_ENB, OUTPUT);
+  motorStop();  // ensure motor is off at boot
+
+#if USE_DEPTH_SENSOR
   Wire.begin(I2C_SDA, I2C_SCL);
   scanI2C();
 
@@ -228,14 +526,25 @@ void setup() {
   sensor.setFluidDensity(FLUID_DENSITY);
   Serial.printf("Model: MS5837-30BA, fluid density: %.1f kg/m^3\n", FLUID_DENSITY);
   Serial.println();
+#else
+  Serial.println("[MS5837 SKIPPED — USE_DEPTH_SENSOR=0]");
+  Serial.println();
+#endif
 
   calibrateZero();
   setupLittleFS();
   setupEspNow();
 
   Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
-  Serial.println("Press 'D' on the serial console to dump the log file to the station.");
+  Serial.println("Serial keys: S=speed ramp test, M=start mission, D=dump log, X=abort.");
   Serial.printf("Company number: %s, packet interval: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
+  Serial.printf("Mission: %d profiles. Bottom-referenced bands:\n", PROFILE_COUNT);
+  Serial.printf("  DEEP    %.2f-%.2f m  (target 2.50 m, bottom of float)\n",
+                DEEP_MIN_M, DEEP_MAX_M);
+  Serial.printf("  SHALLOW %.2f-%.2f m  (target 0.40 m at top -> %.2f m at bottom)\n",
+                SHALLOW_MIN_M, SHALLOW_MAX_M, 0.40f + FLOAT_HEIGHT_M);
+  Serial.printf("Sensor offset from float bottom: %.4f m\n", SENSOR_OFFSET_FROM_BOTTOM);
+  Serial.printf("Hold duration: %lu s\n", HOLD_DURATION_MS / 1000);
   Serial.println();
 
   missionStartMs = millis();
@@ -270,6 +579,20 @@ void loop() {
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'D' || c == 'd') dumpLog();
+    else if (c == 'S' || c == 's') {
+      Serial.println("[SERIAL] S — speed ramp test");
+      rampTestStart();
+    }
+    else if (c == 'M' || c == 'm') {
+      Serial.printf("[SERIAL] M — start mission (%d profiles)\n", PROFILE_COUNT);
+      missionStart();
+    }
+    else if (c == 'X' || c == 'x') {
+      Serial.println("[SERIAL] X — abort, motor off");
+      rampTestActive = false;
+      motorStop();
+      enterState(MS_IDLE);
+    }
   }
 
   // Wireless command flags (set in callback, executed here)
@@ -294,11 +617,20 @@ void loop() {
   }
   if (cmdStartRequested) {
     cmdStartRequested = false;
-    Serial.println("[CMD] START — autonomous sequence not implemented yet (stub)");
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"START_STUB", 10);
+    Serial.printf("[CMD] START — mission (%d profiles)\n", PROFILE_COUNT);
+    missionStart();
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"MISSION_START", 13);
   }
 
+#if USE_DEPTH_SENSOR
   sensor.read();
+#endif
+
+  // Ramp test (manual motor verification) and mission state machine each tick.
+  rampTestTick();
+  if (!rampTestActive) {
+    missionTick(reportedDepth());
+  }
 
   // Emit a mission data packet every 5 s (serial + wireless + LittleFS)
   if ((long)(millis() - nextPacketMs) >= 0) {
