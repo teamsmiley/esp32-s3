@@ -20,14 +20,16 @@
 #define BOOT_BUTTON 0
 
 // L298N Motor B (OUT3/OUT4) with PWM speed control on ENB.
-// Descent (water intake): IN3=HIGH, IN4=LOW.   Ascent (water eject): IN3=LOW, IN4=HIGH.
+// One-way buoyancy engine: pump only INTAKES water (sink). Motor OFF lets the float
+// passively rise via residual positive buoyancy. Reverse is wired but unused by the mission.
+// IN3=HIGH, IN4=LOW = descent (intake).   IN3=LOW, IN4=LOW = stop (rise naturally).
 // ENB jumper REMOVED — GPIO4 drives ENB with PWM (0=stop, 255=full).
 #define MOTOR_IN3 17
 #define MOTOR_IN4 18
 #define MOTOR_ENB 4
 
-#define MOTOR_SPEED_FULL  255   // DESCEND / ASCEND / SURFACE legs
-#define MOTOR_SPEED_HOLD   90   // gentle corrections during HOLD bands (~35%)
+#define MOTOR_SPEED_FULL  255   // DESCEND legs (full intake)
+#define MOTOR_SPEED_HOLD   90   // gentle intake during HOLD bands (~35%)
 
 // Float geometry. Sensor is at the midpoint of a 12-inch (30.48 cm) tall float.
 // All mission depth values below are expressed as the float BOTTOM's depth.
@@ -71,6 +73,8 @@ volatile bool cmdDumpRequested = false;
 volatile bool cmdZeroRequested = false;
 volatile bool cmdPingRequested = false;
 volatile bool cmdStartRequested = false;
+volatile bool cmdAbortRequested = false;
+volatile bool cmdTestRequested  = false;
 
 // BOOT button debounce state
 int lastButtonState = HIGH;
@@ -210,19 +214,17 @@ void rampTestTick() {
   }
 }
 
-// Bang-bang depth controller for HOLD states. Returns true while depth is inside the band.
-// Corrections use MOTOR_SPEED_HOLD (gentle) to avoid overshoot that would reset the 30s timer.
+// One-way buoyancy controller for HOLD states.
+// Strategy: pump (sink) when shallower than the band midpoint, otherwise stop and let
+// natural buoyancy bring the float back up. Returns true while depth is inside the band.
 bool holdControl(float depth, float lo, float hi) {
-  if (depth < lo) {
+  float midpoint = (lo + hi) * 0.5f;
+  if (depth < midpoint) {
     motorSetSpeed(MOTOR_DESCEND, MOTOR_SPEED_HOLD);
-    return false;
+  } else {
+    motorStop();   // rise passively
   }
-  if (depth > hi) {
-    motorSetSpeed(MOTOR_ASCEND, MOTOR_SPEED_HOLD);
-    return false;
-  }
-  motorSetSpeed(MOTOR_OFF, 0);
-  return true;
+  return (depth >= lo && depth <= hi);
 }
 
 void missionTick(float depth) {
@@ -231,21 +233,19 @@ void missionTick(float depth) {
     return;
   }
 
-  // Emergency: too deep -> force ascent regardless of state
+  // Emergency: too deep -> stop pump, let buoyancy bring the float up
   if (depth > MAX_DEPTH_M) {
-    Serial.printf("[SAFETY] depth %.2f m > %.2f m — emergency ascent\n", depth, MAX_DEPTH_M);
-    motorSet(MOTOR_ASCEND);
+    Serial.printf("[SAFETY] depth %.2f m > %.2f m — pump off, surfacing\n", depth, MAX_DEPTH_M);
+    motorStop();
     enterState(MS_SURFACE);
     return;
   }
 
-  // Per-state watchdog (descent/ascent transit only)
-  bool isTransit = (missionState == MS_DESCEND ||
-                    missionState == MS_ASCEND_SHALLOW ||
-                    missionState == MS_SURFACE);
-  if (isTransit && (millis() - stateStartMs) > STATE_TIMEOUT_MS) {
-    Serial.printf("[SAFETY] %s timeout — forcing surface\n", stateName(missionState));
-    motorSet(MOTOR_ASCEND);
+  // Watchdog only on the active-pumping state (DESCEND). Rise phases rely on natural buoyancy
+  // and may legitimately take several minutes, so they have no timeout.
+  if (missionState == MS_DESCEND && (millis() - stateStartMs) > STATE_TIMEOUT_MS) {
+    Serial.printf("[SAFETY] DESCEND timeout — pump off, surfacing\n");
+    motorStop();
     enterState(MS_SURFACE);
     return;
   }
@@ -273,7 +273,7 @@ void missionTick(float depth) {
     }
 
     case MS_ASCEND_SHALLOW:
-      motorSet(MOTOR_ASCEND);
+      motorStop();   // rise passively
       if (depth <= SHALLOW_MAX_M) enterState(MS_HOLD_SHALLOW);
       break;
 
@@ -294,9 +294,8 @@ void missionTick(float depth) {
     }
 
     case MS_SURFACE:
-      motorSet(MOTOR_ASCEND);
+      motorStop();   // rise passively
       if (depth <= SURFACE_M) {
-        motorStop();
         profileIndex++;
         if (profileIndex >= PROFILE_COUNT) {
           Serial.printf("[MISSION] all %d profiles complete\n", PROFILE_COUNT);
@@ -411,6 +410,8 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   else if (strcmp(cmd, "ZERO") == 0) cmdZeroRequested = true;
   else if (strcmp(cmd, "PING") == 0) cmdPingRequested = true;
   else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
+  else if (strcmp(cmd, "ABRT") == 0) cmdAbortRequested = true;
+  else if (strcmp(cmd, "TEST") == 0) cmdTestRequested  = true;
   else Serial.printf("  unknown command: %s\n", cmd);
 }
 
@@ -536,7 +537,7 @@ void setup() {
   setupEspNow();
 
   Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
-  Serial.println("Serial keys: S=speed ramp test, M=start mission, D=dump log, X=abort.");
+  Serial.println("Serial keys (mirror station): S=start mission, T=speed ramp test, X=abort, D=dump log.");
   Serial.printf("Company number: %s, packet interval: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.printf("Mission: %d profiles. Bottom-referenced bands:\n", PROFILE_COUNT);
   Serial.printf("  DEEP    %.2f-%.2f m  (target 2.50 m, bottom of float)\n",
@@ -575,17 +576,16 @@ void loop() {
     nextPacketMs = missionStartMs;
   }
 
-  // Serial command handling (dev convenience)
+  // Serial command handling — keys mirror the station's wireless command keys.
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == 'D' || c == 'd') dumpLog();
-    else if (c == 'S' || c == 's') {
-      Serial.println("[SERIAL] S — speed ramp test");
-      rampTestStart();
-    }
-    else if (c == 'M' || c == 'm') {
-      Serial.printf("[SERIAL] M — start mission (%d profiles)\n", PROFILE_COUNT);
+    if (c == 'S' || c == 's') {
+      Serial.printf("[SERIAL] S — start mission (%d profiles)\n", PROFILE_COUNT);
       missionStart();
+    }
+    else if (c == 'T' || c == 't') {
+      Serial.println("[SERIAL] T — speed ramp test");
+      rampTestStart();
     }
     else if (c == 'X' || c == 'x') {
       Serial.println("[SERIAL] X — abort, motor off");
@@ -593,6 +593,7 @@ void loop() {
       motorStop();
       enterState(MS_IDLE);
     }
+    else if (c == 'D' || c == 'd') dumpLog();
   }
 
   // Wireless command flags (set in callback, executed here)
@@ -620,6 +621,20 @@ void loop() {
     Serial.printf("[CMD] START — mission (%d profiles)\n", PROFILE_COUNT);
     missionStart();
     if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"MISSION_START", 13);
+  }
+  if (cmdAbortRequested) {
+    cmdAbortRequested = false;
+    Serial.println("[CMD] ABORT — stop everything");
+    rampTestActive = false;
+    motorStop();
+    enterState(MS_IDLE);
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"ABORTED", 7);
+  }
+  if (cmdTestRequested) {
+    cmdTestRequested = false;
+    Serial.println("[CMD] TEST — speed ramp");
+    rampTestStart();
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"TEST_START", 10);
   }
 
 #if USE_DEPTH_SENSOR

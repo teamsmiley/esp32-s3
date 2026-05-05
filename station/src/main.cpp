@@ -117,10 +117,12 @@ void infoRxLog() {
 void printHelp() {
   Serial.println("--------------------------------");
   Serial.println(" Keys -> float commands:");
-  Serial.println("   D = DUMP   (dump LittleFS log)");
+  Serial.println("   S = START  (run 3-profile mission)");
+  Serial.println("   X = ABORT  (stop motor, return to idle)");
+  Serial.println("   T = TEST   (10s speed ramp self-test)");
   Serial.println("   Z = ZERO   (recalibrate depth zero)");
   Serial.println("   P = PING   (connection check)");
-  Serial.println("   S = START  (start autonomous sequence — stub)");
+  Serial.println("   D = DUMP   (dump LittleFS log)");
   Serial.println(" Keys -> station local:");
   Serial.println("   R = READ   (print received.log to serial)");
   Serial.println("   E = ERASE  (delete received.log)");
@@ -172,6 +174,8 @@ void loop() {
       case 'Z': case 'z': sendCommand("ZERO"); break;
       case 'P': case 'p': sendCommand("PING"); break;
       case 'S': case 's': sendCommand("STAR"); break;  // shortened to 4 bytes
+      case 'X': case 'x': sendCommand("ABRT"); break;
+      case 'T': case 't': sendCommand("TEST"); break;
       case 'R': case 'r': readRxLog(); break;
       case 'E': case 'e': eraseRxLog(); break;
       case 'I': case 'i': infoRxLog(); break;
