@@ -39,6 +39,7 @@ While the float is on the surface or just after recovery, send commands by **typ
 | `S` | `STAR` (=START) | Runs the autonomous mission: 3 vertical profiles (descend → 2.5 m hold 30 s → 40 cm hold 30 s) × 3   | `[RX] MISSION_START` then state logs |
 | `X` | `ABRT` (=ABORT) | Stops everything (motor off, ramp test off, mission state machine returned to IDLE)                  | `[RX] ABORTED`                 |
 | `T` | `TEST`          | 10 s motor speed ramp self-test (0 → 255 → 0, descend direction). Verifies ENB PWM wiring.           | `[RX] TEST_START`              |
+| `C` | `CALI`          | In-water HOLD-PWM auto-calibration: descends to ≥ 2.27 m, sweeps PWM 60–180 in 7 × 4 s steps, picks the lowest-drift value, saves to `/cali.txt`. Auto-loaded on every boot. | `[RX] CALI_OK pwm=N`           |
 | `Z` | `ZERO`          | Recalibrates depth zero (16-sample average) + resets mission timer                                   | `[RX] ZERO_OK offset=X.XXXX m` |
 | `P` | `PING`          | Connection check reply                                                                               | `[RX] PONG`                    |
 | `D` | `DUMP`          | Wirelessly transmits the entire LittleFS mission log line by line (50 ms gap)                        | `[RX] PVPHSROV ...` × N        |

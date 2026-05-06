@@ -228,7 +228,7 @@ void rampTestTick() {
 
 // In-water HOLD-speed calibration. Runs a PWM sweep at the deep band, picks the PWM
 // with the smallest absolute drift, and persists it to /cali.txt.
-enum CaliPhase { CALI_IDLE, CALI_DESCEND, CALI_SWEEP, CALI_DONE_PHASE };
+enum CaliPhase { CALI_IDLE, CALI_DESCEND, CALI_SWEEP };
 CaliPhase caliPhase = CALI_IDLE;
 unsigned long caliPhaseStartMs = 0;
 unsigned long caliStepStartMs = 0;
@@ -677,6 +677,7 @@ void setup() {
 
   calibrateZero();
   setupLittleFS();
+  loadHoldSpeed();
   setupEspNow();
 
   Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
@@ -685,6 +686,7 @@ void setup() {
   Serial.println("   S = START  (run 3-profile mission)");
   Serial.println("   X = ABORT  (stop motor, return to idle)");
   Serial.println("   T = TEST   (10s speed ramp self-test)");
+  Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
   Serial.println("   D = DUMP   (read LittleFS mission log to serial)");
   Serial.println(" Float bench-test keys (no station equivalent):");
   Serial.println("   F = toggle fake-depth mode (uses fakeDepth instead of sensor)");
@@ -703,6 +705,10 @@ void setup() {
   Serial.printf("Sensor offset from float bottom: %.4f m (sensor at midpoint, 6 in)\n",
                 SENSOR_OFFSET_FROM_BOTTOM);
   Serial.printf("Surface check (bottom-referenced): reportedDepth <= %.2f m\n", SURFACE_M);
+  Serial.printf("HOLD speed: %d/255 %s\n", motorSpeedHold,
+                motorSpeedHold == MOTOR_SPEED_HOLD_DEFAULT
+                  ? "(default — run 'C' in water to calibrate)"
+                  : "(loaded from /cali.txt)");
   Serial.printf("Hold duration: %lu s\n", HOLD_DURATION_MS / 1000);
   Serial.println();
 
@@ -748,8 +754,13 @@ void loop() {
     else if (c == 'X' || c == 'x') {
       Serial.println("[SERIAL] X — abort, motor off");
       rampTestActive = false;
+      caliPhase = CALI_IDLE;
       motorStop();
       enterState(MS_IDLE);
+    }
+    else if (c == 'C' || c == 'c') {
+      Serial.println("[SERIAL] C — auto-calibrate hold PWM");
+      caliStart();
     }
     else if (c == 'D' || c == 'd') dumpLog();
     // Fake depth controls (bench testing without water)
@@ -814,9 +825,15 @@ void loop() {
     cmdAbortRequested = false;
     Serial.println("[CMD] ABORT — stop everything");
     rampTestActive = false;
+    caliPhase = CALI_IDLE;
     motorStop();
     enterState(MS_IDLE);
     if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"ABORTED", 7);
+  }
+  if (cmdCaliRequested) {
+    cmdCaliRequested = false;
+    Serial.println("[CMD] CALI — auto-calibrate hold PWM");
+    caliStart();
   }
   if (cmdTestRequested) {
     cmdTestRequested = false;
@@ -856,10 +873,14 @@ void loop() {
   sensor.read();
 #endif
 
-  // Ramp test (manual motor verification) and mission state machine each tick.
+  // Dispatch order: ramp test → calibration → mission. Higher-priority modes preempt
+  // the mission state machine while they run.
   rampTestTick();
   if (!rampTestActive) {
-    missionTick(reportedDepth());
+    caliTick(reportedDepth());
+    if (caliPhase == CALI_IDLE) {
+      missionTick(reportedDepth());
+    }
   }
 
   // Emit a mission data packet every 5 s (serial + wireless + LittleFS)

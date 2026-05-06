@@ -120,6 +120,7 @@ void printHelp() {
   Serial.println("   S = START  (run 3-profile mission)");
   Serial.println("   X = ABORT  (stop motor, return to idle)");
   Serial.println("   T = TEST   (10s speed ramp self-test)");
+  Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
   Serial.println("   Z = ZERO   (recalibrate depth zero)");
   Serial.println("   P = PING   (connection check)");
   Serial.println("   D = DUMP   (dump LittleFS log)");
@@ -183,6 +184,7 @@ void loop() {
       case 'S': case 's': sendCommand("STAR"); break;  // shortened to 4 bytes
       case 'X': case 'x': sendCommand("ABRT"); break;
       case 'T': case 't': sendCommand("TEST"); break;
+      case 'C': case 'c': sendCommand("CALI"); break;
       // Fake-depth bench-test commands (forwarded to float)
       case 'F': case 'f': sendCommand("FAKE"); break;  // toggle fake mode
       case '0':           sendCommand("FK0M"); break;  // fake = 0.00 m

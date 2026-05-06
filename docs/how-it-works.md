@@ -150,6 +150,7 @@ Single-character keys; identical behavior whether typed at the float's serial mo
 | `S` | `STAR` | Start the 3-profile mission |
 | `X` | `ABRT` | Abort — motor off, reset to IDLE |
 | `T` | `TEST` | 10-second motor speed ramp self-test |
+| `C` | `CALI` | In-water HOLD-PWM auto-calibration (saves to `/cali.txt`, auto-loaded at boot) |
 | `Z` | `ZERO` | Recalibrate depth zero (16-sample average) |
 | `P` | `PING` | Connection check (replies `PONG`) |
 | `D` | `DUMP` | Stream the entire LittleFS mission log |
@@ -210,6 +211,10 @@ Rise phases (`ASCEND_SHALLOW`, `SURFACE`) intentionally have **no timeout** — 
 ### LittleFS log backup
 
 On every boot, the previous `/mission.log` is renamed to `/mission.log.bak` so an unexpected reset can't erase the last mission's data.
+
+### HOLD-speed calibration
+
+`MOTOR_SPEED_HOLD` is loaded from `/cali.txt` at boot. If the file is missing, malformed, or out of the 1–255 range, the firmware falls back to a hard-coded default (90/255). The `C` command runs an in-water sweep that finds the PWM with the smallest depth drift in the deep band and writes the result. `X` aborts mid-sweep and leaves `/cali.txt` unchanged.
 
 ---
 
