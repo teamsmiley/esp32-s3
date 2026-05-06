@@ -42,7 +42,7 @@ While the float is on the surface or just after recovery, send commands by **typ
 | `P` | `PING`          | Connection check reply                                                                               | `[RX] PONG`                    |
 | `D` | `DUMP`          | Wirelessly transmits the entire LittleFS mission log line by line (50 ms gap)                        | `[RX] PVPHSROV ...` × N        |
 
-The float serial monitor accepts the same keys (`S`/`X`/`T`/`D`) for direct local control during bench debugging — no station required.
+The float serial monitor accepts the same keys (`S`/`X`/`C`/`D`) for direct local control during bench debugging — no station required.
 
 **Local commands (handled by the station itself):**
 
@@ -74,7 +74,7 @@ Three actors — **Laptop**, **Station** (ground board), and **Float** (submergi
 
 **Key-input responsibilities:**
 
-- `S` `X` `T` `C` `P` `D` = the station receives them and forwards via ESP-NOW to the float
+- `S` `X` `C` `P` `D` = the station receives them and forwards via ESP-NOW to the float
 - `R` `E` `I` = handled locally by the station (LittleFS dump / erase / info). Either typed by the operator or sent automatically by the Python tool.
 
 See [`docs/prerequisites.md`](docs/prerequisites.md) for the exact two-terminal commands (monitor + graph).
