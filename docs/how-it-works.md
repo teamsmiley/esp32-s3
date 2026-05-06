@@ -9,7 +9,7 @@ For two-board operating procedure, see [`prerequisites.md`](prerequisites.md).
 
 ## 1. The mission, in one paragraph
 
-When the operator presses `S` at the station, the float runs **3 vertical profiles** without further intervention. Each profile is: descend to **2.5 m** (bottom-of-float reference) and hold for **30 seconds** (±33 cm allowed band), then rise to **40 cm** (top-of-float reference) and hold for **30 seconds**, then return to the surface so the next profile can start. The whole sequence takes ~3 minutes in fake-depth bench tests; in water the descent and rise legs add real travel time.
+When the operator presses `S` at the station, the float runs **3 vertical profiles** without further intervention. Each profile is: descend to **2.5 m** (bottom-of-float reference) and hold for **30 seconds** (±33 cm allowed band), then rise to **40 cm** (top-of-float reference) and hold for **30 seconds**, then return to the surface so the next profile can start. In water the descent and rise legs add real travel time.
 
 ---
 
@@ -153,40 +153,9 @@ Single-character keys; identical behavior whether typed at the float's serial mo
 |---|---|---|
 | `S` | `STAR` | Start the 3-profile mission |
 | `X` | `ABRT` | Abort — motor off, reset to IDLE |
-| `T` | `TEST` | 10-second motor speed ramp self-test |
 | `C` | `CALI` | In-water HOLD-PWM auto-calibration (saves to `/cali.txt`, auto-loaded at boot) |
 | `P` | `PING` | Connection check (replies `PONG`) |
 | `D` | `DUMP` | Stream the entire LittleFS mission log |
-
-### Bench-test commands (fake depth)
-
-These let you exercise the state machine without water by overriding the sensor reading.
-
-| Key | Wireless | fake bottom-depth | Use |
-|---|---|---|---|
-| `F` | `FAKE` | toggle on/off | enable/disable fake mode |
-| `0` | `FK0M` | 0.00 m | surface preset (top above water) |
-| `2` | `FK2M` | 2.50 m | deep target |
-| `4` | `FK4M` | 0.70 m | shallow target |
-| `+` | `FKUP` | +0.10 m | nudge deeper |
-| `-` | `FKDN` | -0.10 m | nudge shallower |
-
-A complete dry-run sequence:
-
-```
-F  ← fake mode ON
-S  ← start mission
-2  ← fake depth = 2.50 m → HOLD_DEEP
-   (wait 30 s, six packets)
-4  ← fake depth = 0.70 m → HOLD_SHALLOW
-   (wait 30 s)
-0  ← fake depth = 0.00 m → SURFACE → next profile
-2 → 30 s wait → 4 → 30 s wait → 0   (profile 2)
-2 → 30 s wait → 4 → 30 s wait → 0   (profile 3)
-   → MISSION_DONE → STATE = DONE
-```
-
-Total bench-test time: ~3 minutes.
 
 ---
 
