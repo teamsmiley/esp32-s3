@@ -26,8 +26,9 @@ LOG_PATH = Path("received.log")
 PNG_PATH = Path("received.png")
 
 # Float geometry — packet depth is the float BOTTOM. Top = bottom - FLOAT_HEIGHT_M.
+# Total length is 13 in (12" tube + two 0.5" end caps).
 # Mission targets: BOTTOM at 2.5 m for the deep hold, TOP at 0.4 m for the shallow hold.
-FLOAT_HEIGHT_M = 0.3048   # 12 in
+FLOAT_HEIGHT_M = 0.3302   # 13 in
 DEEP_TARGET_M  = 2.50     # bottom-referenced
 SHALLOW_TARGET_TOP_M = 0.40   # top-referenced
 

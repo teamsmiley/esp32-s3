@@ -11,7 +11,7 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
   - When the pump stops, residual positive buoyancy lifts the float passively → no reverse pumping needed
   - HOLD bands use a midpoint-based bang-bang: pump on (gentle) when shallower than midpoint, pump off when deeper
   - ENB jumper must be REMOVED — speed is driven by GPIO4 PWM (0=stop, 255=full)
-- **Float geometry**: 12 in (30.48 cm) tall, depth sensor mounted **~0.5 in above the bottom** (small standoff for the housing). All reported depths are translated to the float's BOTTOM (mission reference). Bottom-near mounting keeps the sensor submerged the longest as the float rises and yields the smallest offset disclosure to the judge for the 2.5 m hold (only 0.5 in / 1.27 cm).
+- **Float geometry**: 13 in (33.02 cm) total — 12 in tube + 0.5 in top cap + 0.5 in bottom cap. The depth sensor sits in the bottom cap **flush with the float's bottom face**, so the sensor reading equals the bottom-of-float depth with zero offset. Bottom-mounting keeps the sensor submerged the longest as the float rises and removes any need to disclose a sensor offset to the judge for the 2.5 m hold.
 
 > **First time setting up?** See [`docs/prerequisites.md`](docs/prerequisites.md) — installs uv, syncs the `tools/` venv, and walks through the two-terminal mission flow.
 

@@ -62,24 +62,27 @@ SURFACE is the **only path to the next profile**. If the surface check never fir
 
 ## 3. Depth coordinate system
 
-The float is **12 inches (30.48 cm) tall**, and the MS5837 depth sensor is mounted **~0.5 inch above the bottom** (a small mechanical standoff for the housing).
+The float is **13 inches (33.02 cm) tall total** — a 12 in tube with a 0.5 in cap on each end. The MS5837 depth sensor lives in the bottom cap, **flush with the float's bottom face**, so the sensor reading equals the bottom-of-float depth directly (zero offset).
 
 ```
-   ━━━━━ ← top
-  ┃     ┃
-  ┃     ┃
-  ┃ 12  ┃
-  ┃ in  ┃
-  ┃     ┃
-  ┃  ●  ┃ ← sensor (~0.5 in above bottom, reads bottom - 0.0127 m)
-   ━━━━━ ← bottom (= sensor + 0.0127 m)
+   ━━━━━ ← top of top cap
+  ┃ 0.5 ┃ top cap
+   ┌───┐
+   │   │
+   │ 12│
+   │ in│ tube
+   │   │
+   │   │
+   └───┘
+  ┃ 0.5 ┃ bottom cap
+   ━●━━━ ← bottom of bottom cap = sensor (zero offset)
 ```
 
 A single helper translates the raw sensor value:
 
 | Function | Returns | Used for |
 |---|---|---|
-| `reportedDepth()` | sensor + 0.0127 m (bottom of float) | All HOLD bands, SURFACE check, packet output, graph |
+| `reportedDepth()` | sensor reading directly (bottom of float) | All HOLD bands, SURFACE check, packet output, graph |
 
 The mission specifies hold targets in **mixed references** (2.5 m at the bottom, 40 cm at the top), but internally we normalize everything to bottom depth via `reportedDepth()` for consistent band comparisons. SURFACE detection also uses bottom depth (`reportedDepth() ≤ 0.20 m`) — bottom-near mounting keeps the sensor submerged the longest as the float ascends, so the depth signal stays continuous and never saturates at 0 m the way a top-mounted sensor would.
 
