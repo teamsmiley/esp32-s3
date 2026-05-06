@@ -226,8 +226,10 @@ void rampTestTick() {
   }
 }
 
-// In-water HOLD-speed calibration. Runs a PWM sweep at the deep band, picks the PWM
-// with the smallest absolute drift, and persists it to /cali.txt.
+// In-water HOLD-speed calibration. Two trigger paths:
+//   1. Manual `C` / `CALI` command — descends from surface, sweeps, saves, surfaces.
+//   2. Automatic during the first mission HOLD_DEEP if /cali.txt is missing — sweep runs
+//      inline before the 30-second hold timer starts. No user action required.
 enum CaliPhase { CALI_IDLE, CALI_DESCEND, CALI_SWEEP };
 CaliPhase caliPhase = CALI_IDLE;
 unsigned long caliPhaseStartMs = 0;
@@ -236,13 +238,31 @@ int caliStepIndex = 0;
 float caliStepStartDepth = 0.0f;
 float caliBestAbsDrift = 1e9f;
 int caliBestPwm = MOTOR_SPEED_HOLD_DEFAULT;
+bool caliPending = true;     // cleared once calibration completes (manual or inline)
+bool caliInline = false;     // true when calibration runs inside HOLD_DEEP, not standalone
 
 const int CALI_PWMS[] = {60, 80, 100, 120, 140, 160, 180};
 const int CALI_NUM_PWMS = sizeof(CALI_PWMS) / sizeof(CALI_PWMS[0]);
+// Inline calibration uses a shorter sweep so the mission timer impact is bounded.
+const int CALI_INLINE_PWMS[] = {70, 100, 130, 160};
+const int CALI_INLINE_NUM_PWMS = sizeof(CALI_INLINE_PWMS) / sizeof(CALI_INLINE_PWMS[0]);
 const unsigned long CALI_STEP_MS = 4000UL;
+const unsigned long CALI_INLINE_STEP_MS = 3000UL;
 const unsigned long CALI_DESCEND_TIMEOUT_MS = 60000UL;
 
+// Picked PWM list and step duration based on inline vs standalone mode.
+const int *caliCurrentPwms() {
+  return caliInline ? CALI_INLINE_PWMS : CALI_PWMS;
+}
+int caliCurrentNumPwms() {
+  return caliInline ? CALI_INLINE_NUM_PWMS : CALI_NUM_PWMS;
+}
+unsigned long caliCurrentStepMs() {
+  return caliInline ? CALI_INLINE_STEP_MS : CALI_STEP_MS;
+}
+
 void caliStart() {
+  caliInline = false;
   caliPhase = CALI_DESCEND;
   caliPhaseStartMs = millis();
   caliStepIndex = 0;
@@ -252,10 +272,29 @@ void caliStart() {
   Serial.printf("[CALI] start — descending to >= %.2f m\n", DEEP_MIN_M);
 }
 
+// Begin sweep immediately, assuming we are already in the deep band.
+// Used for inline calibration that piggybacks on the first mission HOLD_DEEP.
+void caliStartInlineAtDepth(float depth) {
+  caliInline = true;
+  caliPhase = CALI_SWEEP;
+  caliPhaseStartMs = millis();
+  caliStepIndex = 0;
+  caliBestAbsDrift = 1e9f;
+  caliBestPwm = MOTOR_SPEED_HOLD_DEFAULT;
+  caliStepStartMs = millis();
+  caliStepStartDepth = depth;
+  motorSetSpeed(MOTOR_DESCEND, caliCurrentPwms()[0]);
+  Serial.printf("[CALI inline] start at %.2f m — %d PWM steps × %lu ms\n",
+                depth, caliCurrentNumPwms(), caliCurrentStepMs());
+  Serial.printf("[CALI inline] step 1/%d pwm=%d\n",
+                caliCurrentNumPwms(), caliCurrentPwms()[0]);
+}
+
 void caliAbort(const char *reason) {
   Serial.printf("[CALI] abort: %s\n", reason);
   motorStop();
   caliPhase = CALI_IDLE;
+  caliInline = false;
 }
 
 void caliTick(float depth) {
@@ -275,41 +314,49 @@ void caliTick(float depth) {
         caliStepIndex = 0;
         caliStepStartMs = millis();
         caliStepStartDepth = depth;
-        motorSetSpeed(MOTOR_DESCEND, CALI_PWMS[0]);
+        motorSetSpeed(MOTOR_DESCEND, caliCurrentPwms()[0]);
         Serial.printf("[CALI] step 1/%d pwm=%d  start_depth=%.2f m\n",
-                      CALI_NUM_PWMS, CALI_PWMS[0], depth);
+                      caliCurrentNumPwms(), caliCurrentPwms()[0], depth);
       } else if (millis() - caliPhaseStartMs > CALI_DESCEND_TIMEOUT_MS) {
         caliAbort("descend timeout");
       }
       break;
 
-    case CALI_SWEEP:
-      if (millis() - caliStepStartMs >= CALI_STEP_MS) {
+    case CALI_SWEEP: {
+      const int *pwms = caliCurrentPwms();
+      const int numPwms = caliCurrentNumPwms();
+      const unsigned long stepMs = caliCurrentStepMs();
+      if (millis() - caliStepStartMs >= stepMs) {
         float drift = depth - caliStepStartDepth;
-        Serial.printf("[CALI] step %d/%d pwm=%d  drift=%+.3f m\n",
-                      caliStepIndex + 1, CALI_NUM_PWMS, CALI_PWMS[caliStepIndex], drift);
+        const char *tag = caliInline ? "CALI inline" : "CALI";
+        Serial.printf("[%s] step %d/%d pwm=%d  drift=%+.3f m\n",
+                      tag, caliStepIndex + 1, numPwms, pwms[caliStepIndex], drift);
         float absDrift = drift < 0 ? -drift : drift;
         if (absDrift < caliBestAbsDrift) {
           caliBestAbsDrift = absDrift;
-          caliBestPwm = CALI_PWMS[caliStepIndex];
+          caliBestPwm = pwms[caliStepIndex];
         }
         caliStepIndex++;
-        if (caliStepIndex >= CALI_NUM_PWMS) {
+        if (caliStepIndex >= numPwms) {
           motorStop();
-          Serial.printf("[CALI] best pwm=%d (|drift|=%.3f m)\n", caliBestPwm, caliBestAbsDrift);
+          Serial.printf("[%s] best pwm=%d (|drift|=%.3f m)\n",
+                        tag, caliBestPwm, caliBestAbsDrift);
           saveHoldSpeed(caliBestPwm);
           motorSpeedHold = caliBestPwm;
+          caliPending = false;
           char resp[40];
           snprintf(resp, sizeof(resp), "CALI_OK pwm=%d", caliBestPwm);
           if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
           caliPhase = CALI_IDLE;
+          caliInline = false;
         } else {
           caliStepStartMs = millis();
           caliStepStartDepth = depth;
-          motorSetSpeed(MOTOR_DESCEND, CALI_PWMS[caliStepIndex]);
+          motorSetSpeed(MOTOR_DESCEND, pwms[caliStepIndex]);
         }
       }
       break;
+    }
 
     default: break;
   }
@@ -354,7 +401,16 @@ void missionTick(float depth) {
   switch (missionState) {
     case MS_DESCEND:
       motorSet(MOTOR_DESCEND);
-      if (depth >= DEEP_MIN_M) enterState(MS_HOLD_DEEP);
+      if (depth >= DEEP_MIN_M) {
+        enterState(MS_HOLD_DEEP);
+        // First time hitting the deep band without saved calibration: piggyback an inline
+        // PWM sweep before the 30-second hold timer starts. This lets the float self-tune
+        // mid-mission when there was no chance to run `C` in advance.
+        if (caliPending) {
+          Serial.println("[MISSION] no calibration on file — running inline sweep first");
+          caliStartInlineAtDepth(depth);
+        }
+      }
       break;
 
     case MS_HOLD_DEEP: {
@@ -559,6 +615,7 @@ bool loadHoldSpeed() {
     return false;
   }
   motorSpeedHold = v;
+  caliPending = false;
   Serial.printf("[CALI] loaded MOTOR_SPEED_HOLD = %d from %s\n", v, CALI_FILE);
   return true;
 }
@@ -706,8 +763,8 @@ void setup() {
                 SENSOR_OFFSET_FROM_BOTTOM);
   Serial.printf("Surface check (bottom-referenced): reportedDepth <= %.2f m\n", SURFACE_M);
   Serial.printf("HOLD speed: %d/255 %s\n", motorSpeedHold,
-                motorSpeedHold == MOTOR_SPEED_HOLD_DEFAULT
-                  ? "(default — run 'C' in water to calibrate)"
+                caliPending
+                  ? "(default — auto-calibrates on first HOLD_DEEP, or run 'C' now)"
                   : "(loaded from /cali.txt)");
   Serial.printf("Hold duration: %lu s\n", HOLD_DURATION_MS / 1000);
   Serial.println();

@@ -214,7 +214,14 @@ On every boot, the previous `/mission.log` is renamed to `/mission.log.bak` so a
 
 ### HOLD-speed calibration
 
-`MOTOR_SPEED_HOLD` is loaded from `/cali.txt` at boot. If the file is missing, malformed, or out of the 1–255 range, the firmware falls back to a hard-coded default (90/255). The `C` command runs an in-water sweep that finds the PWM with the smallest depth drift in the deep band and writes the result. `X` aborts mid-sweep and leaves `/cali.txt` unchanged.
+`MOTOR_SPEED_HOLD` is loaded from `/cali.txt` at boot. If the file is missing, malformed, or out of the 1–255 range, the firmware falls back to a hard-coded default (90/255) and sets a `caliPending` flag.
+
+Two trigger paths populate `/cali.txt`:
+
+- **Manual `C` / `CALI`** — explicit calibration before the mission. Float descends from the surface, sweeps 7 PWMs (60–180) for 4 s each, picks the lowest-drift value, saves, surfaces.
+- **Automatic inline** — if `caliPending` is true when the float first enters `MS_HOLD_DEEP` during a real mission, a shorter 4-PWM × 3 s sweep (~12 s) runs *before* the 30-second hold timer starts. This handles the "no chance to pre-test in mission water" case automatically.
+
+`X` aborts either path mid-sweep and leaves `/cali.txt` unchanged. Once `caliPending` is cleared (file loaded at boot or sweep completed), subsequent missions skip calibration entirely.
 
 ---
 
