@@ -25,6 +25,12 @@ ESP32_S3_VID = 0x303A
 LOG_PATH = Path("received.log")
 PNG_PATH = Path("received.png")
 
+# Float geometry — packet depth is the float BOTTOM. Top = bottom - FLOAT_HEIGHT_M.
+# Mission targets: BOTTOM at 2.5 m for the deep hold, TOP at 0.4 m for the shallow hold.
+FLOAT_HEIGHT_M = 0.3048   # 12 in
+DEEP_TARGET_M  = 2.50     # bottom-referenced
+SHALLOW_TARGET_TOP_M = 0.40   # top-referenced
+
 
 def autodetect_port() -> str:
     from serial.tools import list_ports
@@ -53,17 +59,30 @@ def make_graph(points: list[tuple[int, float]]) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     points = sorted(points, key=lambda p: p[0])
-    times, depths = zip(*points)
+    times, bottoms = zip(*points)
+    tops = [b - FLOAT_HEIGHT_M for b in bottoms]
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(times, depths, marker="o", linewidth=1.5, markersize=4)
+    ax.plot(times, bottoms, marker="o", linewidth=1.5, markersize=4,
+            color="tab:blue", label="Float bottom (packet value)")
+    ax.plot(times, tops, marker="s", linewidth=1.5, markersize=3, linestyle="--",
+            color="tab:orange", label=f"Float top (bottom − {FLOAT_HEIGHT_M:.4f} m)")
+
+    # Mission target lines so the judge can spot the two holds at a glance.
+    ax.axhline(DEEP_TARGET_M, color="tab:blue", linestyle=":", alpha=0.5,
+               label=f"Deep target: bottom = {DEEP_TARGET_M} m")
+    ax.axhline(SHALLOW_TARGET_TOP_M, color="tab:orange", linestyle=":", alpha=0.5,
+               label=f"Shallow target: top = {SHALLOW_TARGET_TOP_M} m")
+
     ax.set_xlabel("Time (s, since mission start)")
     ax.set_ylabel("Depth (m)")
-    ax.set_title("MATE Floats 2026 — Vertical Profile")
+    ax.set_title("MATE Floats 2026 — Vertical Profile (bottom & top of float)")
     ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=9)
     fig.tight_layout()
     fig.savefig(PNG_PATH, dpi=150)
-    print(f"[graph] saved {PNG_PATH} ({len(points)} packets)")
+    print(f"[graph] saved {PNG_PATH} ({len(points)} packets, bottom + top traces)")
 
 
 def main() -> None:

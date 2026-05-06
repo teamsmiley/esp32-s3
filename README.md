@@ -11,7 +11,7 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
   - When the pump stops, residual positive buoyancy lifts the float passively → no reverse pumping needed
   - HOLD bands use a midpoint-based bang-bang: pump on (gentle) when shallower than midpoint, pump off when deeper
   - ENB jumper must be REMOVED — speed is driven by GPIO4 PWM (0=stop, 255=full)
-- **Float geometry**: 12 in (30.48 cm) tall, depth sensor mounted at the 6 in midpoint. All reported depths are translated to the float's BOTTOM (mission reference).
+- **Float geometry**: 12 in (30.48 cm) tall, depth sensor mounted at the **midpoint** (6 in from bottom). All reported depths are translated to the float's BOTTOM (mission reference). Mid-mounting keeps the sensor submerged across the entire HOLD_SHALLOW band, giving a continuous depth signal for surface-breach prevention (a top-mounted sensor would saturate at ~0 m once it breaches air).
 
 > **First time setting up?** See [`docs/prerequisites.md`](docs/prerequisites.md) — installs uv, syncs the `tools/` venv, and walks through the two-terminal mission flow.
 
@@ -105,6 +105,7 @@ docs/
 
 ## References
 
+- [How it works](docs/how-it-works.md) — Firmware internals: state machine, buoyancy engine, depth coordinates, failsafes ([한글](docs/how-it-works_ko.md))
 - [Prerequisites](docs/prerequisites.md) — Install + two-terminal mission flow (macOS / Windows)
 - [Mission analysis](docs/2026_MATE_Floats_분석.md) — Scoring / packet format / physical & electrical constraints
 - [TODO](TODO.md) — Mission backlog + completed decisions
