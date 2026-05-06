@@ -69,12 +69,15 @@ bool espNowReady = false;
 bool fsReady = false;
 
 // Wireless command flags (RX callback is ISR-like; heavy work runs in loop())
-volatile bool cmdDumpRequested = false;
-volatile bool cmdZeroRequested = false;
-volatile bool cmdPingRequested = false;
-volatile bool cmdStartRequested = false;
-volatile bool cmdAbortRequested = false;
-volatile bool cmdTestRequested  = false;
+volatile bool  cmdDumpRequested       = false;
+volatile bool  cmdZeroRequested       = false;
+volatile bool  cmdPingRequested       = false;
+volatile bool  cmdStartRequested      = false;
+volatile bool  cmdAbortRequested      = false;
+volatile bool  cmdTestRequested       = false;
+volatile bool  cmdFakeToggleRequested = false;
+volatile float cmdFakeSetValue        = -1.0f;   // -1 = no pending set
+volatile float cmdFakeDelta           = 0.0f;    // 0 = no pending delta
 
 // BOOT button debounce state
 int lastButtonState = HIGH;
@@ -358,9 +361,15 @@ float calibratedDepth() {
 #endif
 }
 
+// Fake depth override — bench-test the mission state machine without water.
+// When enabled, reportedDepth() returns the manually-set value instead of the sensor.
+bool fakeDepthEnabled = false;
+float fakeDepth = 0.0f;
+
 // Float-bottom depth (mission reference for both deep and shallow holds).
 // All packet values, mission state machine inputs, and graphs use this.
 float reportedDepth() {
+  if (fakeDepthEnabled) return fakeDepth;
   return calibratedDepth() + SENSOR_OFFSET_FROM_BOTTOM;
 }
 
@@ -412,6 +421,12 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
   else if (strcmp(cmd, "ABRT") == 0) cmdAbortRequested = true;
   else if (strcmp(cmd, "TEST") == 0) cmdTestRequested  = true;
+  else if (strcmp(cmd, "FAKE") == 0) cmdFakeToggleRequested = true;
+  else if (strcmp(cmd, "FK0M") == 0) cmdFakeSetValue = 0.00f;   // surface
+  else if (strcmp(cmd, "FK2M") == 0) cmdFakeSetValue = 2.50f;   // deep target
+  else if (strcmp(cmd, "FK4M") == 0) cmdFakeSetValue = 0.70f;   // shallow target (bottom)
+  else if (strcmp(cmd, "FKUP") == 0) cmdFakeDelta    = +0.10f;
+  else if (strcmp(cmd, "FKDN") == 0) cmdFakeDelta    = -0.10f;
   else Serial.printf("  unknown command: %s\n", cmd);
 }
 
@@ -537,7 +552,20 @@ void setup() {
   setupEspNow();
 
   Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
-  Serial.println("Serial keys (mirror station): S=start mission, T=speed ramp test, X=abort, D=dump log.");
+  Serial.println("--------------------------------");
+  Serial.println(" Float serial keys (same as station wireless):");
+  Serial.println("   S = START  (run 3-profile mission)");
+  Serial.println("   X = ABORT  (stop motor, return to idle)");
+  Serial.println("   T = TEST   (10s speed ramp self-test)");
+  Serial.println("   D = DUMP   (read LittleFS mission log to serial)");
+  Serial.println(" Float bench-test keys (no station equivalent):");
+  Serial.println("   F = toggle fake-depth mode (uses fakeDepth instead of sensor)");
+  Serial.println("   + = fake depth +0.10 m");
+  Serial.println("   - = fake depth -0.10 m");
+  Serial.println("   0 = fake depth = 0.00 m  (surface preset)");
+  Serial.println("   2 = fake depth = 2.50 m  (deep band preset)");
+  Serial.println("   4 = fake depth = 0.70 m  (shallow band preset, bottom-ref)");
+  Serial.println("--------------------------------");
   Serial.printf("Company number: %s, packet interval: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.printf("Mission: %d profiles. Bottom-referenced bands:\n", PROFILE_COUNT);
   Serial.printf("  DEEP    %.2f-%.2f m  (target 2.50 m, bottom of float)\n",
@@ -594,6 +622,36 @@ void loop() {
       enterState(MS_IDLE);
     }
     else if (c == 'D' || c == 'd') dumpLog();
+    // Fake depth controls (bench testing without water)
+    else if (c == 'F' || c == 'f') {
+      fakeDepthEnabled = !fakeDepthEnabled;
+      Serial.printf("[FAKE] %s — current value %.2f m\n",
+                    fakeDepthEnabled ? "ON  (using fake depth)" : "OFF (using real sensor)",
+                    fakeDepth);
+    }
+    else if (c == '+' || c == '=') {
+      fakeDepth += 0.10f;
+      Serial.printf("[FAKE] depth = %.2f m %s\n", fakeDepth,
+                    fakeDepthEnabled ? "" : "(fake mode OFF — press F to apply)");
+    }
+    else if (c == '-' || c == '_') {
+      fakeDepth -= 0.10f;
+      if (fakeDepth < 0) fakeDepth = 0;
+      Serial.printf("[FAKE] depth = %.2f m %s\n", fakeDepth,
+                    fakeDepthEnabled ? "" : "(fake mode OFF — press F to apply)");
+    }
+    else if (c == '2') {
+      fakeDepth = 2.50f;
+      Serial.printf("[FAKE] depth = %.2f m (deep target preset)\n", fakeDepth);
+    }
+    else if (c == '4') {
+      fakeDepth = 0.70f;   // bottom-referenced, ~middle of shallow band
+      Serial.printf("[FAKE] depth = %.2f m (shallow target preset)\n", fakeDepth);
+    }
+    else if (c == '0') {
+      fakeDepth = 0.0f;
+      Serial.printf("[FAKE] depth = %.2f m (surface preset)\n", fakeDepth);
+    }
   }
 
   // Wireless command flags (set in callback, executed here)
@@ -635,6 +693,33 @@ void loop() {
     Serial.println("[CMD] TEST — speed ramp");
     rampTestStart();
     if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"TEST_START", 10);
+  }
+  if (cmdFakeToggleRequested) {
+    cmdFakeToggleRequested = false;
+    fakeDepthEnabled = !fakeDepthEnabled;
+    Serial.printf("[CMD] FAKE %s — depth %.2f m\n",
+                  fakeDepthEnabled ? "ON" : "OFF", fakeDepth);
+    char resp[40];
+    snprintf(resp, sizeof(resp), "FAKE_%s_%.2fm",
+             fakeDepthEnabled ? "ON" : "OFF", fakeDepth);
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
+  }
+  if (cmdFakeSetValue >= 0.0f) {
+    fakeDepth = cmdFakeSetValue;
+    cmdFakeSetValue = -1.0f;
+    Serial.printf("[CMD] fake depth = %.2f m\n", fakeDepth);
+    char resp[32];
+    snprintf(resp, sizeof(resp), "FK_SET_%.2fm", fakeDepth);
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
+  }
+  if (cmdFakeDelta != 0.0f) {
+    fakeDepth += cmdFakeDelta;
+    if (fakeDepth < 0.0f) fakeDepth = 0.0f;
+    cmdFakeDelta = 0.0f;
+    Serial.printf("[CMD] fake depth = %.2f m\n", fakeDepth);
+    char resp[32];
+    snprintf(resp, sizeof(resp), "FK_NUDGE_%.2fm", fakeDepth);
+    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
   }
 
 #if USE_DEPTH_SENSOR

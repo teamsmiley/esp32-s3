@@ -123,6 +123,13 @@ void printHelp() {
   Serial.println("   Z = ZERO   (recalibrate depth zero)");
   Serial.println("   P = PING   (connection check)");
   Serial.println("   D = DUMP   (dump LittleFS log)");
+  Serial.println(" Bench-test (forwarded to float, no water needed):");
+  Serial.println("   F = toggle fake-depth mode");
+  Serial.println("   0 = fake depth 0.00 m  (surface)");
+  Serial.println("   2 = fake depth 2.50 m  (deep target)");
+  Serial.println("   4 = fake depth 0.70 m  (shallow target, bottom-ref)");
+  Serial.println("   + = fake depth +0.10 m");
+  Serial.println("   - = fake depth -0.10 m");
   Serial.println(" Keys -> station local:");
   Serial.println("   R = READ   (print received.log to serial)");
   Serial.println("   E = ERASE  (delete received.log)");
@@ -176,6 +183,13 @@ void loop() {
       case 'S': case 's': sendCommand("STAR"); break;  // shortened to 4 bytes
       case 'X': case 'x': sendCommand("ABRT"); break;
       case 'T': case 't': sendCommand("TEST"); break;
+      // Fake-depth bench-test commands (forwarded to float)
+      case 'F': case 'f': sendCommand("FAKE"); break;  // toggle fake mode
+      case '0':           sendCommand("FK0M"); break;  // fake = 0.00 m
+      case '2':           sendCommand("FK2M"); break;  // fake = 2.50 m (deep preset)
+      case '4':           sendCommand("FK4M"); break;  // fake = 0.70 m (shallow preset)
+      case '+': case '=': sendCommand("FKUP"); break;  // fake +0.10 m
+      case '-': case '_': sendCommand("FKDN"); break;  // fake -0.10 m
       case 'R': case 'r': readRxLog(); break;
       case 'E': case 'e': eraseRxLog(); break;
       case 'I': case 'i': infoRxLog(); break;
