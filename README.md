@@ -37,8 +37,7 @@ While the float is on the surface or just after recovery, send commands by **typ
 | Key | Command sent    | Float behavior                                                                                       | Response (station serial)      |
 | --- | --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `S` | `STAR` (=START) | Runs the autonomous mission: 3 vertical profiles (descend → 2.5 m hold 30 s → 40 cm hold 30 s) × 3   | `[RX] MISSION_START` then state logs |
-| `X` | `ABRT` (=ABORT) | Stops everything (motor off, ramp test off, mission state machine returned to IDLE)                  | `[RX] ABORTED`                 |
-| `T` | `TEST`          | 10 s motor speed ramp self-test (0 → 255 → 0, descend direction). Verifies ENB PWM wiring.           | `[RX] TEST_START`              |
+| `X` | `ABRT` (=ABORT) | Stops everything (motor off, mission state machine returned to IDLE)                                 | `[RX] ABORTED`                 |
 | `C` | `CALI`          | Manual in-water HOLD-PWM calibration: descends to ≥ 2.27 m, sweeps PWM 60–180 in 7 × 4 s steps, picks the lowest-drift value, saves to `/cali.txt`. (If skipped, the float runs an inline 4-step sweep automatically during the first mission HOLD_DEEP.) Auto-loaded on every boot. | `[RX] CALI_OK pwm=N`           |
 | `P` | `PING`          | Connection check reply                                                                               | `[RX] PONG`                    |
 | `D` | `DUMP`          | Wirelessly transmits the entire LittleFS mission log line by line (50 ms gap)                        | `[RX] PVPHSROV ...` × N        |
@@ -64,9 +63,9 @@ Three actors — **Laptop**, **Station** (ground board), and **Float** (submergi
 
 | #   | Actor           | Action                                                                             | Score    |
 | --- | --------------- | ---------------------------------------------------------------------------------- | -------- |
-| 1   | Station + Float | Boot both boards (USB / battery)                                                   | —        |
-| 2   | Laptop          | Open the station serial monitor (terminal 1)                                       | —        |
-| 3   | Operator        | Place the float on the water (surface)                                             | —        |
+| 1   | Station + Float | Boot both boards (USB / battery). The float begins transmitting 5-second packets immediately. | —        |
+| 2   | Laptop          | Open the station serial monitor (terminal 1) and verify packets are coming in.     | —        |
+| 3   | Operator        | Place the float on the water (surface). At least one packet must reach the station before the first profile starts. | ② 5 pts  |
 | 4   | Laptop          | `S` → station → STAR command → float runs 3 vertical profiles autonomously         | ③④ 50 pts |
 | 5   | Float           | No wireless reach while submerged → appends only to its own LittleFS every 5 s     | —        |
 | 6   | Operator        | Float surfaces between profiles and at the end → wireless restored                 | —        |

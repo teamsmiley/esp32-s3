@@ -28,12 +28,14 @@ DevKitC-1 의 두 USB-C 포트 중 **`USB` 라벨** 쪽에 station 케이블을 
 
 **무선 명령 (station → float, ESP-NOW):**
 
-| 키  | 송신 명령       | float 동작                                                  | 응답 (station 시리얼)          |
-| --- | --------------- | ----------------------------------------------------------- | ------------------------------ |
-| `D` | `DUMP`          | LittleFS 의 미션 로그 전체를 한 줄씩 무선 송신 (50 ms 간격) | `[RX] PVPHSROV ...` × N개      |
-| `Z` | `ZERO`          | 깊이 0점 재보정 (16회 평균) + 미션 시간 리셋                | `[RX] ZERO_OK offset=X.XXXX m` |
-| `P` | `PING`          | 연결 확인 회신                                              | `[RX] PONG`                    |
-| `S` | `STAR` (=START) | 자율 시퀀스 시작 트리거 (현재 stub)                         | `[RX] START_STUB`              |
+| 키  | 송신 명령       | float 동작                                                                                                              | 응답 (station 시리얼)        |
+| --- | --------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `S` | `STAR` (=START) | 자율 미션 실행: 3회 수직 프로파일 (하강 → 2.5m hold 30초 → 40cm hold 30초) × 3                                          | `[RX] MISSION_START` + 상태 로그 |
+| `X` | `ABRT` (=ABORT) | 모든 동작 정지 (모터 OFF, 램프 테스트 OFF, 미션 상태 IDLE 복귀)                                                        | `[RX] ABORTED`               |
+| `T` | `TEST`          | 10초 모터 속도 램프 self-test (0 → 255 → 0, 흡입 방향). ENB PWM 배선 검증.                                              | `[RX] TEST_START`            |
+| `C` | `CALI`          | 수중 HOLD-PWM 자동 캘리브레이션: 2.27m 이상 하강 후 PWM 60-180 7단계 × 4초 sweep, 가장 드리프트 작은 값을 `/cali.txt`에 저장. 부팅 시 자동 로드. (생략 시 미션 첫 HOLD_DEEP에서 4단계 inline sweep 자동 실행.) | `[RX] CALI_OK pwm=N`         |
+| `P` | `PING`          | 연결 확인 회신                                                                                                          | `[RX] PONG`                  |
+| `D` | `DUMP`          | LittleFS 미션 로그 전체를 한 줄씩 무선 송신 (50 ms 간격)                                                                | `[RX] PVPHSROV ...` × N개    |
 
 **로컬 명령 (station 자체 처리):**
 
@@ -54,19 +56,18 @@ DevKitC-1 의 두 USB-C 포트 중 **`USB` 라벨** 쪽에 station 케이블을 
 
 | #   | 행위자          | 동작                                                                         | 점수   |
 | --- | --------------- | ---------------------------------------------------------------------------- | ------ |
-| 1   | Station + Float | 두 보드 부팅 (USB / 배터리)                                                  | —      |
-| 2   | Laptop          | station 시리얼 모니터 열기 (터미널 1)                                        | —      |
-| 3   | 사람            | float 을 물에 띄움 (수면)                                                    | —      |
-| 4   | Laptop          | `Z` 키 → station → float 으로 ZERO 명령 (수면 0점 재보정)                    | ② 5점  |
-| 5   | 사람            | float 잠수 → 미션 수행 (수심 2.5m / 40cm 프로파일)                           | —      |
-| 6   | Float           | 무선 도달 안 됨 → 자기 LittleFS 에만 5초마다 누적                            | —      |
-| 7   | 사람            | float 회수 (수면) → 무선 복구                                                | —      |
-| 8   | Laptop          | `D` 키 → station → float 으로 DUMP 명령 → station LittleFS 에 모든 패킷 저장 | ⑤ 10점 |
-| 9   | Laptop          | 터미널 2 에서: `python read_and_graph.py` → `received.png` 그래프 생성       | ⑥ 10점 |
+| 1   | Station + Float | 두 보드 부팅 (USB / 배터리). 부팅 직후 float이 5초마다 패킷 자동 송신 시작.       | —      |
+| 2   | Laptop          | station 시리얼 모니터 열기 (터미널 1) — 패킷 수신 확인.                            | —      |
+| 3   | 사람            | float을 물에 띄움 (수면). 첫 프로파일 시작 전 패킷이 station에 한 번 이상 도달해야 함. | ② 5점  |
+| 4   | Laptop          | `S` 키 → station → STAR 명령 → float이 3회 수직 프로파일 자율 수행                 | ③④ 50점 |
+| 5   | Float           | 잠수 중 무선 도달 불가 → 자기 LittleFS 에만 5초마다 누적                          | —      |
+| 6   | 사람            | float이 프로파일 사이/마지막에 수면 도달 → 무선 복구                              | —      |
+| 7   | Laptop          | `D` 키 → station → DUMP 명령 → station LittleFS 에 모든 패킷 저장                  | ⑤ 10점 |
+| 8   | Laptop          | 터미널 2 에서: `python read_and_graph.py` → `received.png` 그래프 생성             | ⑥ 10점 |
 
 **키 입력 분담:**
 
-- `D` `Z` `P` `S` = station 이 받아서 ESP-NOW 로 float 에 전달
+- `S` `X` `T` `C` `P` `D` = station 이 받아서 ESP-NOW 로 float 에 전달
 - `R` `E` `I` = station 로컬 (LittleFS dump/erase/info). 사람이 직접 누르거나 Python 이 자동 송신
 
 정확한 두 터미널 명령 (모니터 + 그래프) 은 [`docs/prerequisites_ko.md`](docs/prerequisites_ko.md) 참고.

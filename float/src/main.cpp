@@ -82,10 +82,6 @@ volatile bool  cmdDumpRequested       = false;
 volatile bool  cmdPingRequested       = false;
 volatile bool  cmdStartRequested      = false;
 volatile bool  cmdAbortRequested      = false;
-volatile bool  cmdTestRequested       = false;
-volatile bool  cmdFakeToggleRequested = false;
-volatile float cmdFakeSetValue        = -1.0f;   // -1 = no pending set
-volatile float cmdFakeDelta           = 0.0f;    // 0 = no pending delta
 volatile bool  cmdCaliRequested       = false;
 
 // BOOT button debounce state
@@ -179,51 +175,6 @@ void enterState(MissionState s) {
 void missionStart() {
   profileIndex = 0;
   enterState(MS_DESCEND);
-}
-
-// Speed ramp self-test: 0 -> 255 over 5 s (descend dir), then 255 -> 0 over 5 s. Total 10 s.
-// Lets you watch the motor accelerate/decelerate to verify PWM wiring on ENB.
-#define RAMP_TEST_DURATION_MS 10000UL
-bool rampTestActive = false;
-unsigned long rampTestStartMs = 0;
-unsigned long rampTestLastLogMs = 0;
-
-void rampTestStart() {
-  rampTestActive = true;
-  rampTestStartMs = millis();
-  rampTestLastLogMs = 0;
-  Serial.println("[TEST] speed ramp 0->255->0 over 10s (descend direction)");
-}
-
-void rampTestTick() {
-  if (!rampTestActive) return;
-
-  unsigned long elapsed = millis() - rampTestStartMs;
-  if (elapsed >= RAMP_TEST_DURATION_MS) {
-    motorStop();
-    rampTestActive = false;
-    Serial.println("[TEST] ramp complete");
-    return;
-  }
-
-  // Triangle ramp
-  int speed;
-  if (elapsed < RAMP_TEST_DURATION_MS / 2) {
-    speed = (int)((elapsed * 255) / (RAMP_TEST_DURATION_MS / 2));
-  } else {
-    speed = (int)(((RAMP_TEST_DURATION_MS - elapsed) * 255) / (RAMP_TEST_DURATION_MS / 2));
-  }
-  // Drive ENB directly so logs aren't spammed by motorSetSpeed's direction-change branch.
-  digitalWrite(MOTOR_IN3, HIGH);
-  digitalWrite(MOTOR_IN4, LOW);
-  analogWrite(MOTOR_ENB, speed);
-  motorDir = MOTOR_DESCEND;
-  motorSpeed = speed;
-
-  if (millis() - rampTestLastLogMs >= 500) {
-    Serial.printf("[TEST] t=%lu ms  speed=%d/255\n", elapsed, speed);
-    rampTestLastLogMs = millis();
-  }
 }
 
 // In-water HOLD-speed calibration. Two trigger paths:
@@ -495,15 +446,9 @@ float calibratedDepth() {
 #endif
 }
 
-// Fake depth override — bench-test the mission state machine without water.
-// When enabled, reportedDepth() returns the manually-set value instead of the sensor.
-bool fakeDepthEnabled = false;
-float fakeDepth = 0.0f;
-
 // Float-bottom depth (mission reference for all bands and SURFACE detection).
 // All packet values, mission state machine inputs, and graphs use this.
 float reportedDepth() {
-  if (fakeDepthEnabled) return fakeDepth;
   return calibratedDepth() + SENSOR_OFFSET_FROM_BOTTOM;
 }
 
@@ -553,13 +498,6 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   else if (strcmp(cmd, "PING") == 0) cmdPingRequested = true;
   else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
   else if (strcmp(cmd, "ABRT") == 0) cmdAbortRequested = true;
-  else if (strcmp(cmd, "TEST") == 0) cmdTestRequested  = true;
-  else if (strcmp(cmd, "FAKE") == 0) cmdFakeToggleRequested = true;
-  else if (strcmp(cmd, "FK0M") == 0) cmdFakeSetValue = 0.00f;   // surface
-  else if (strcmp(cmd, "FK2M") == 0) cmdFakeSetValue = 2.50f;   // deep target
-  else if (strcmp(cmd, "FK4M") == 0) cmdFakeSetValue = 0.70f;   // shallow target (bottom)
-  else if (strcmp(cmd, "FKUP") == 0) cmdFakeDelta    = +0.10f;
-  else if (strcmp(cmd, "FKDN") == 0) cmdFakeDelta    = -0.10f;
   else if (strcmp(cmd, "CALI") == 0) cmdCaliRequested = true;
   else Serial.printf("  unknown command: %s\n", cmd);
 }
@@ -720,16 +658,8 @@ void setup() {
   Serial.println(" Float serial keys (same as station wireless):");
   Serial.println("   S = START  (run 3-profile mission)");
   Serial.println("   X = ABORT  (stop motor, return to idle)");
-  Serial.println("   T = TEST   (10s speed ramp self-test)");
   Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
   Serial.println("   D = DUMP   (read LittleFS mission log to serial)");
-  Serial.println(" Float bench-test keys (no station equivalent):");
-  Serial.println("   F = toggle fake-depth mode (uses fakeDepth instead of sensor)");
-  Serial.println("   + = fake depth +0.10 m");
-  Serial.println("   - = fake depth -0.10 m");
-  Serial.println("   0 = fake depth = 0.00 m  (surface preset)");
-  Serial.println("   2 = fake depth = 2.50 m  (deep band preset)");
-  Serial.println("   4 = fake depth = 0.70 m  (shallow band preset, bottom-ref)");
   Serial.println("--------------------------------");
   Serial.printf("Company number: %s, packet interval: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.printf("Mission: %d profiles. Bottom-referenced bands:\n", PROFILE_COUNT);
@@ -782,13 +712,8 @@ void loop() {
       Serial.printf("[SERIAL] S — start mission (%d profiles)\n", PROFILE_COUNT);
       missionStart();
     }
-    else if (c == 'T' || c == 't') {
-      Serial.println("[SERIAL] T — speed ramp test");
-      rampTestStart();
-    }
     else if (c == 'X' || c == 'x') {
       Serial.println("[SERIAL] X — abort, motor off");
-      rampTestActive = false;
       caliPhase = CALI_IDLE;
       motorStop();
       enterState(MS_IDLE);
@@ -798,36 +723,6 @@ void loop() {
       caliStart();
     }
     else if (c == 'D' || c == 'd') dumpLog();
-    // Fake depth controls (bench testing without water)
-    else if (c == 'F' || c == 'f') {
-      fakeDepthEnabled = !fakeDepthEnabled;
-      Serial.printf("[FAKE] %s — current value %.2f m\n",
-                    fakeDepthEnabled ? "ON  (using fake depth)" : "OFF (using real sensor)",
-                    fakeDepth);
-    }
-    else if (c == '+' || c == '=') {
-      fakeDepth += 0.10f;
-      Serial.printf("[FAKE] depth = %.2f m %s\n", fakeDepth,
-                    fakeDepthEnabled ? "" : "(fake mode OFF — press F to apply)");
-    }
-    else if (c == '-' || c == '_') {
-      fakeDepth -= 0.10f;
-      if (fakeDepth < 0) fakeDepth = 0;
-      Serial.printf("[FAKE] depth = %.2f m %s\n", fakeDepth,
-                    fakeDepthEnabled ? "" : "(fake mode OFF — press F to apply)");
-    }
-    else if (c == '2') {
-      fakeDepth = 2.50f;
-      Serial.printf("[FAKE] depth = %.2f m (deep target preset)\n", fakeDepth);
-    }
-    else if (c == '4') {
-      fakeDepth = 0.70f;   // bottom-referenced, ~middle of shallow band
-      Serial.printf("[FAKE] depth = %.2f m (shallow target preset)\n", fakeDepth);
-    }
-    else if (c == '0') {
-      fakeDepth = 0.0f;
-      Serial.printf("[FAKE] depth = %.2f m (surface preset)\n", fakeDepth);
-    }
   }
 
   // Wireless command flags (set in callback, executed here)
@@ -849,7 +744,6 @@ void loop() {
   if (cmdAbortRequested) {
     cmdAbortRequested = false;
     Serial.println("[CMD] ABORT — stop everything");
-    rampTestActive = false;
     caliPhase = CALI_IDLE;
     motorStop();
     enterState(MS_IDLE);
@@ -860,52 +754,15 @@ void loop() {
     Serial.println("[CMD] CALI — auto-calibrate hold PWM");
     caliStart();
   }
-  if (cmdTestRequested) {
-    cmdTestRequested = false;
-    Serial.println("[CMD] TEST — speed ramp");
-    rampTestStart();
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"TEST_START", 10);
-  }
-  if (cmdFakeToggleRequested) {
-    cmdFakeToggleRequested = false;
-    fakeDepthEnabled = !fakeDepthEnabled;
-    Serial.printf("[CMD] FAKE %s — depth %.2f m\n",
-                  fakeDepthEnabled ? "ON" : "OFF", fakeDepth);
-    char resp[40];
-    snprintf(resp, sizeof(resp), "FAKE_%s_%.2fm",
-             fakeDepthEnabled ? "ON" : "OFF", fakeDepth);
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
-  }
-  if (cmdFakeSetValue >= 0.0f) {
-    fakeDepth = cmdFakeSetValue;
-    cmdFakeSetValue = -1.0f;
-    Serial.printf("[CMD] fake depth = %.2f m\n", fakeDepth);
-    char resp[32];
-    snprintf(resp, sizeof(resp), "FK_SET_%.2fm", fakeDepth);
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
-  }
-  if (cmdFakeDelta != 0.0f) {
-    fakeDepth += cmdFakeDelta;
-    if (fakeDepth < 0.0f) fakeDepth = 0.0f;
-    cmdFakeDelta = 0.0f;
-    Serial.printf("[CMD] fake depth = %.2f m\n", fakeDepth);
-    char resp[32];
-    snprintf(resp, sizeof(resp), "FK_NUDGE_%.2fm", fakeDepth);
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
-  }
 
 #if USE_DEPTH_SENSOR
   sensor.read();
 #endif
 
-  // Dispatch order: ramp test → calibration → mission. Higher-priority modes preempt
-  // the mission state machine while they run.
-  rampTestTick();
-  if (!rampTestActive) {
-    caliTick(reportedDepth());
-    if (caliPhase == CALI_IDLE) {
-      missionTick(reportedDepth());
-    }
+  // Calibration preempts the mission state machine while it runs.
+  caliTick(reportedDepth());
+  if (caliPhase == CALI_IDLE) {
+    missionTick(reportedDepth());
   }
 
   // Emit a mission data packet every 5 s (serial + wireless + LittleFS)
