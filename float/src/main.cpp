@@ -33,13 +33,14 @@
 int motorSpeedHold = MOTOR_SPEED_HOLD_DEFAULT;   // overridden at boot from /cali.txt
 #define CALI_FILE "/cali.txt"
 
-// Float geometry. Sensor is at the MIDPOINT of a 12-inch (30.48 cm) tall float (6 in from bottom).
+// Float geometry. Sensor is mounted ~0.5 in (1.27 cm) above the BOTTOM of a 12-inch
+// (30.48 cm) tall float — practically the bottom but with a tiny standoff for the housing.
 // All mission depth values below are expressed as the float BOTTOM's depth.
-// Mid-mounting is preferred over top-mounting because the MS5837 saturates at ~0 m once it
-// breaches air; mid keeps the sensor submerged across the entire HOLD_SHALLOW band, giving
-// continuous depth signal for surface-breach prevention.
+// Bottom-mounting keeps the sensor submerged the longest as the float rises (never
+// saturates at ~0 m the way a top- or mid-mounted sensor would) and yields the smallest
+// offset disclosure for the 2.5 m hold (judges only need the 0.5 in figure for that hold).
 #define FLOAT_HEIGHT_M            0.3048f   // 12 in
-#define SENSOR_OFFSET_FROM_BOTTOM 0.1524f   //  6 in (sensor->bottom distance)
+#define SENSOR_OFFSET_FROM_BOTTOM 0.0127f   //  0.5 in (sensor sits just above the bottom)
 
 // Mission profile parameters (MATE Floats 2026), all bottom-referenced.
 // Deep band:    bottom 2.27 ~ 2.83 m  (rule states "2.5m at the bottom, ±33 cm")
@@ -759,7 +760,7 @@ void setup() {
                 DEEP_MIN_M, DEEP_MAX_M);
   Serial.printf("  SHALLOW %.2f-%.2f m  (target 0.40 m at top -> %.2f m at bottom)\n",
                 SHALLOW_MIN_M, SHALLOW_MAX_M, 0.40f + FLOAT_HEIGHT_M);
-  Serial.printf("Sensor offset from float bottom: %.4f m (sensor at midpoint, 6 in)\n",
+  Serial.printf("Sensor offset from float bottom: %.4f m (sensor ~0.5 in above bottom)\n",
                 SENSOR_OFFSET_FROM_BOTTOM);
   Serial.printf("Surface check (bottom-referenced): reportedDepth <= %.2f m\n", SURFACE_M);
   Serial.printf("HOLD speed: %d/255 %s\n", motorSpeedHold,
