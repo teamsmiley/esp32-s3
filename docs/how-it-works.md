@@ -155,7 +155,6 @@ Single-character keys; identical behavior whether typed at the float's serial mo
 | `X` | `ABRT` | Abort — motor off, reset to IDLE |
 | `T` | `TEST` | 10-second motor speed ramp self-test |
 | `C` | `CALI` | In-water HOLD-PWM auto-calibration (saves to `/cali.txt`, auto-loaded at boot) |
-| `Z` | `ZERO` | Recalibrate depth zero (16-sample average) |
 | `P` | `PING` | Connection check (replies `PONG`) |
 | `D` | `DUMP` | Stream the entire LittleFS mission log |
 
@@ -246,13 +245,11 @@ For the corresponding constants and helper definitions, search `float/src/main.c
 
 ---
 
-## 8. Calibration ritual
+## 8. Pre-deployment checklist
 
-Before each deployment:
+Zero-point calibration was removed because the ±33 cm mission tolerance comfortably absorbs the ~±20 cm of atmospheric pressure noise on raw `sensor.depth()`. There is no manual zero step; just confirm the sensor is reporting sensibly:
 
-1. Boot the float on the surface (or in the operator's hand near the surface).
-2. Wait for the boot message — `[zero calibration done] offset = X.XXXX m`.
-3. If the float is going to be deployed in different water (saltwater, cold), recalibrate with the `Z` command (or BOOT button) once it's floating in the actual water.
-4. Verify the first packet shows a sensible depth (`0.30 meters` is the expected value when the sensor is at the top, in air, immediately after calibration).
-
-After recalibration, the mission elapsed-time clock also resets — so calibrate **before** pressing `S`.
+1. Power on the float and look at the boot output for `[I2C scan ... 0x76 found]` and `[MS5837 init OK]`.
+2. With the float in air, the first packet should report a depth close to 0 m (within ~±0.20 m due to weather).
+3. Press the BOOT button if you want to reset the mission elapsed-time clock to 0 — this no longer runs any calibration.
+4. Place the float in water and press `S` on the station to start the mission.

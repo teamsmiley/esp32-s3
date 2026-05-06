@@ -62,13 +62,13 @@ int motorSpeedHold = MOTOR_SPEED_HOLD_DEFAULT;   // overridden at boot from /cal
 #define FLUID_DENSITY 997.0f  // freshwater kg/m^3 (seawater would be 1029.0)
 #define READ_INTERVAL_MS 500
 #define PACKET_INTERVAL_MS 5000   // mission rule: 1 packet every 5 s
-#define ZERO_SAMPLES 16       // samples to average for zero calibration
-#define ZERO_SAMPLE_DELAY_MS 50
+// Atmospheric pressure variation produces ~±20 cm of noise on raw sensor.depth(),
+// which the ±33 cm mission tolerance comfortably absorbs. Zero-point calibration
+// removed: the sensor reading is used as bottom depth directly.
 
 #if USE_DEPTH_SENSOR
 MS5837 sensor;
 #endif
-float depthOffset = 0.0f;     // zero-calibration offset (m)
 unsigned long missionStartMs = 0;
 unsigned long nextPacketMs = 0;
 
@@ -79,7 +79,6 @@ bool fsReady = false;
 
 // Wireless command flags (RX callback is ISR-like; heavy work runs in loop())
 volatile bool  cmdDumpRequested       = false;
-volatile bool  cmdZeroRequested       = false;
 volatile bool  cmdPingRequested       = false;
 volatile bool  cmdStartRequested      = false;
 volatile bool  cmdAbortRequested      = false;
@@ -486,31 +485,11 @@ void scanI2C() {
   }
 }
 
-// Calibrate the current position as depth 0 m.
-void calibrateZero() {
-#if USE_DEPTH_SENSOR
-  Serial.printf("[zero calibration start — averaging %d samples]\n", ZERO_SAMPLES);
-  double sum = 0.0;
-  for (int i = 0; i < ZERO_SAMPLES; i++) {
-    sensor.read();
-    float raw = sensor.depth();
-    sum += raw;
-    Serial.printf("  sample %2d: %.4f m\n", i + 1, raw);
-    delay(ZERO_SAMPLE_DELAY_MS);
-  }
-  depthOffset = (float)(sum / ZERO_SAMPLES);
-  Serial.printf("[zero calibration done] offset = %.4f m\n", depthOffset);
-  Serial.println();
-#else
-  depthOffset = 0.0f;
-  Serial.println("[zero calibration SKIPPED — USE_DEPTH_SENSOR=0]");
-#endif
-}
-
-// Calibrated depth at the SENSOR position (surface = 0, positive when submerged).
+// Raw depth at the sensor position (bottom of float, mounted flush).
+// No zero calibration — the ±33 cm mission tolerance absorbs atmospheric noise.
 float calibratedDepth() {
 #if USE_DEPTH_SENSOR
-  return sensor.depth() - depthOffset;
+  return sensor.depth();
 #else
   return 0.0f;
 #endif
@@ -571,7 +550,6 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   Serial.printf("[CMD ←] %s\n", cmd);
 
   if      (strcmp(cmd, "DUMP") == 0) cmdDumpRequested = true;
-  else if (strcmp(cmd, "ZERO") == 0) cmdZeroRequested = true;
   else if (strcmp(cmd, "PING") == 0) cmdPingRequested = true;
   else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
   else if (strcmp(cmd, "ABRT") == 0) cmdAbortRequested = true;
@@ -704,7 +682,7 @@ void setupEspNow() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("=== MS5837 depth sensor + zero calibration ===");
+  Serial.println("=== MS5837 depth sensor (no zero calibration — raw reading used) ===");
   Serial.printf("I2C pins: SDA=GPIO%d, SCL=GPIO%d\n", I2C_SDA, I2C_SCL);
 
   pinMode(BOOT_BUTTON, INPUT_PULLUP);
@@ -733,12 +711,11 @@ void setup() {
   Serial.println();
 #endif
 
-  calibrateZero();
   setupLittleFS();
   loadHoldSpeed();
   setupEspNow();
 
-  Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
+  Serial.println("Press BOOT button to reset the mission clock (no zero calibration is performed).");
   Serial.println("--------------------------------");
   Serial.println(" Float serial keys (same as station wireless):");
   Serial.println("   S = START  (run 3-profile mission)");
@@ -793,9 +770,8 @@ bool bootPressed() {
 
 void loop() {
   if (bootPressed()) {
-    Serial.println("\n[BOOT button — recalibrating]");
-    calibrateZero();
-    missionStartMs = millis();   // mission clock restarts at calibration
+    Serial.println("\n[BOOT button — mission clock reset]");
+    missionStartMs = millis();
     nextPacketMs = missionStartMs;
   }
 
@@ -858,16 +834,6 @@ void loop() {
   if (cmdDumpRequested) {
     cmdDumpRequested = false;
     dumpLog();
-  }
-  if (cmdZeroRequested) {
-    cmdZeroRequested = false;
-    Serial.println("[CMD] ZERO handling start");
-    calibrateZero();
-    missionStartMs = millis();
-    nextPacketMs = missionStartMs;
-    char resp[80];
-    snprintf(resp, sizeof(resp), "ZERO_OK offset=%.4f m", depthOffset);
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
   }
   if (cmdPingRequested) {
     cmdPingRequested = false;

@@ -121,7 +121,6 @@ void printHelp() {
   Serial.println("   X = ABORT  (stop motor, return to idle)");
   Serial.println("   T = TEST   (10s speed ramp self-test)");
   Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
-  Serial.println("   Z = ZERO   (recalibrate depth zero)");
   Serial.println("   P = PING   (connection check)");
   Serial.println("   D = DUMP   (dump LittleFS log)");
   Serial.println(" Bench-test (forwarded to float, no water needed):");
@@ -179,7 +178,6 @@ void loop() {
     char c = Serial.read();
     switch (c) {
       case 'D': case 'd': sendCommand("DUMP"); break;
-      case 'Z': case 'z': sendCommand("ZERO"); break;
       case 'P': case 'p': sendCommand("PING"); break;
       case 'S': case 's': sendCommand("STAR"); break;  // shortened to 4 bytes
       case 'X': case 'x': sendCommand("ABRT"); break;
