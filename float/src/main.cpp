@@ -28,13 +28,19 @@
 #define MOTOR_IN4 18
 #define MOTOR_ENB 4
 
-#define MOTOR_SPEED_FULL  255   // DESCEND legs (full intake)
-#define MOTOR_SPEED_HOLD   90   // gentle intake during HOLD bands (~35%)
+#define MOTOR_SPEED_FULL          255   // DESCEND legs (full intake)
+#define MOTOR_SPEED_HOLD_DEFAULT   90   // fallback if /cali.txt absent (~35% duty)
+int motorSpeedHold = MOTOR_SPEED_HOLD_DEFAULT;   // overridden at boot from /cali.txt
+#define CALI_FILE "/cali.txt"
 
-// Float geometry. Sensor is at the midpoint of a 12-inch (30.48 cm) tall float.
-// All mission depth values below are expressed as the float BOTTOM's depth.
-#define FLOAT_HEIGHT_M            0.3048f   // 12 in
-#define SENSOR_OFFSET_FROM_BOTTOM 0.1524f   //  6 in (sensor->bottom distance)
+// Float geometry. Total length 13 in = 12 in tube + 0.5 in top cap + 0.5 in bottom cap.
+// The depth sensor is mounted in the bottom cap and sits exactly at the float's bottom
+// face — no mounting offset. All mission depth values below are expressed as the float
+// BOTTOM's depth, so reportedDepth() == sensor reading directly.
+// Bottom-mounting keeps the sensor submerged the longest as the float rises (never
+// saturates at ~0 m the way a top- or mid-mounted sensor would).
+#define FLOAT_HEIGHT_M            0.3302f   // 13 in (12" tube + 2 × 0.5" caps)
+#define SENSOR_OFFSET_FROM_BOTTOM 0.0000f   // sensor sits flush with the float's bottom
 
 // Mission profile parameters (MATE Floats 2026), all bottom-referenced.
 // Deep band:    bottom 2.27 ~ 2.83 m  (rule states "2.5m at the bottom, ±33 cm")
@@ -44,7 +50,10 @@
 #define SHALLOW_MIN_M    (0.07f + FLOAT_HEIGHT_M)  // 0.3748 m
 #define SHALLOW_MAX_M    (0.73f + FLOAT_HEIGHT_M)  // 1.0348 m
 #define HOLD_DURATION_MS 30000UL
-#define SURFACE_M        0.10f       // bottom-depth at which we consider float "back at surface"
+// Bottom-referenced surface threshold. With the sensor at the midpoint (6 in above bottom),
+// the sensor stays submerged when the top is at the surface — so reportedDepth() drops to
+// roughly half the float height when the float reaches its natural floating position.
+#define SURFACE_M        0.20f
 #define PROFILE_COUNT    3
 #define MAX_DEPTH_M      3.20f       // emergency stop threshold (bottom)
 #define STATE_TIMEOUT_MS 90000UL     // per-state watchdog (descend/ascend)
@@ -53,13 +62,13 @@
 #define FLUID_DENSITY 997.0f  // freshwater kg/m^3 (seawater would be 1029.0)
 #define READ_INTERVAL_MS 500
 #define PACKET_INTERVAL_MS 5000   // mission rule: 1 packet every 5 s
-#define ZERO_SAMPLES 16       // samples to average for zero calibration
-#define ZERO_SAMPLE_DELAY_MS 50
+// Atmospheric pressure variation produces ~±20 cm of noise on raw sensor.depth(),
+// which the ±33 cm mission tolerance comfortably absorbs. Zero-point calibration
+// removed: the sensor reading is used as bottom depth directly.
 
 #if USE_DEPTH_SENSOR
 MS5837 sensor;
 #endif
-float depthOffset = 0.0f;     // zero-calibration offset (m)
 unsigned long missionStartMs = 0;
 unsigned long nextPacketMs = 0;
 
@@ -69,12 +78,11 @@ bool espNowReady = false;
 bool fsReady = false;
 
 // Wireless command flags (RX callback is ISR-like; heavy work runs in loop())
-volatile bool cmdDumpRequested = false;
-volatile bool cmdZeroRequested = false;
-volatile bool cmdPingRequested = false;
-volatile bool cmdStartRequested = false;
-volatile bool cmdAbortRequested = false;
-volatile bool cmdTestRequested  = false;
+volatile bool  cmdDumpRequested       = false;
+volatile bool  cmdPingRequested       = false;
+volatile bool  cmdStartRequested      = false;
+volatile bool  cmdAbortRequested      = false;
+volatile bool  cmdCaliRequested       = false;
 
 // BOOT button debounce state
 int lastButtonState = HIGH;
@@ -176,48 +184,143 @@ void missionStart() {
   enterState(MS_DESCEND);
 }
 
-// Speed ramp self-test: 0 -> 255 over 5 s (descend dir), then 255 -> 0 over 5 s. Total 10 s.
-// Lets you watch the motor accelerate/decelerate to verify PWM wiring on ENB.
-#define RAMP_TEST_DURATION_MS 10000UL
-bool rampTestActive = false;
-unsigned long rampTestStartMs = 0;
-unsigned long rampTestLastLogMs = 0;
+// In-water HOLD-speed calibration. Two trigger paths:
+//   1. Manual `C` / `CALI` command — descends from surface, sweeps, saves, surfaces.
+//   2. Automatic during the first mission HOLD_DEEP if /cali.txt is missing — sweep runs
+//      inline before the 30-second hold timer starts. No user action required.
+enum CaliPhase { CALI_IDLE, CALI_DESCEND, CALI_SWEEP };
+CaliPhase caliPhase = CALI_IDLE;
+unsigned long caliPhaseStartMs = 0;
+unsigned long caliStepStartMs = 0;
+int caliStepIndex = 0;
+float caliStepStartDepth = 0.0f;
+float caliBestAbsDrift = 1e9f;
+int caliBestPwm = MOTOR_SPEED_HOLD_DEFAULT;
+bool caliPending = true;     // cleared once calibration completes (manual or inline)
+bool caliInline = false;     // true when calibration runs inside HOLD_DEEP, not standalone
 
-void rampTestStart() {
-  rampTestActive = true;
-  rampTestStartMs = millis();
-  rampTestLastLogMs = 0;
-  Serial.println("[TEST] speed ramp 0->255->0 over 10s (descend direction)");
+const int CALI_PWMS[] = {60, 80, 100, 120, 140, 160, 180};
+const int CALI_NUM_PWMS = sizeof(CALI_PWMS) / sizeof(CALI_PWMS[0]);
+// Inline calibration uses a shorter sweep so the mission timer impact is bounded.
+const int CALI_INLINE_PWMS[] = {70, 100, 130, 160};
+const int CALI_INLINE_NUM_PWMS = sizeof(CALI_INLINE_PWMS) / sizeof(CALI_INLINE_PWMS[0]);
+const unsigned long CALI_STEP_MS = 4000UL;
+const unsigned long CALI_INLINE_STEP_MS = 3000UL;
+const unsigned long CALI_DESCEND_TIMEOUT_MS = 60000UL;
+
+// Picked PWM list and step duration based on inline vs standalone mode.
+const int *caliCurrentPwms() {
+  return caliInline ? CALI_INLINE_PWMS : CALI_PWMS;
+}
+int caliCurrentNumPwms() {
+  return caliInline ? CALI_INLINE_NUM_PWMS : CALI_NUM_PWMS;
+}
+unsigned long caliCurrentStepMs() {
+  return caliInline ? CALI_INLINE_STEP_MS : CALI_STEP_MS;
 }
 
-void rampTestTick() {
-  if (!rampTestActive) return;
+// Forward declarations for LittleFS calibration helpers (defined later).
+bool loadHoldSpeed();
+void saveHoldSpeed(int v);
 
-  unsigned long elapsed = millis() - rampTestStartMs;
-  if (elapsed >= RAMP_TEST_DURATION_MS) {
-    motorStop();
-    rampTestActive = false;
-    Serial.println("[TEST] ramp complete");
+void caliStart() {
+  caliInline = false;
+  caliPhase = CALI_DESCEND;
+  caliPhaseStartMs = millis();
+  caliStepIndex = 0;
+  caliBestAbsDrift = 1e9f;
+  caliBestPwm = MOTOR_SPEED_HOLD_DEFAULT;
+  motorSet(MOTOR_DESCEND);   // full speed to reach deep band
+  Serial.printf("[CALI] start — descending to >= %.2f m\n", DEEP_MIN_M);
+}
+
+// Begin sweep immediately, assuming we are already in the deep band.
+// Used for inline calibration that piggybacks on the first mission HOLD_DEEP.
+void caliStartInlineAtDepth(float depth) {
+  caliInline = true;
+  caliPhase = CALI_SWEEP;
+  caliPhaseStartMs = millis();
+  caliStepIndex = 0;
+  caliBestAbsDrift = 1e9f;
+  caliBestPwm = MOTOR_SPEED_HOLD_DEFAULT;
+  caliStepStartMs = millis();
+  caliStepStartDepth = depth;
+  motorSetSpeed(MOTOR_DESCEND, caliCurrentPwms()[0]);
+  Serial.printf("[CALI inline] start at %.2f m — %d PWM steps × %lu ms\n",
+                depth, caliCurrentNumPwms(), caliCurrentStepMs());
+  Serial.printf("[CALI inline] step 1/%d pwm=%d\n",
+                caliCurrentNumPwms(), caliCurrentPwms()[0]);
+}
+
+void caliAbort(const char *reason) {
+  Serial.printf("[CALI] abort: %s\n", reason);
+  motorStop();
+  caliPhase = CALI_IDLE;
+  caliInline = false;
+}
+
+void caliTick(float depth) {
+  if (caliPhase == CALI_IDLE) return;
+
+  // Emergency depth guard (mirrors missionTick's MAX_DEPTH_M)
+  if (depth > MAX_DEPTH_M) {
+    caliAbort("depth exceeded MAX_DEPTH_M");
     return;
   }
 
-  // Triangle ramp
-  int speed;
-  if (elapsed < RAMP_TEST_DURATION_MS / 2) {
-    speed = (int)((elapsed * 255) / (RAMP_TEST_DURATION_MS / 2));
-  } else {
-    speed = (int)(((RAMP_TEST_DURATION_MS - elapsed) * 255) / (RAMP_TEST_DURATION_MS / 2));
-  }
-  // Drive ENB directly so logs aren't spammed by motorSetSpeed's direction-change branch.
-  digitalWrite(MOTOR_IN3, HIGH);
-  digitalWrite(MOTOR_IN4, LOW);
-  analogWrite(MOTOR_ENB, speed);
-  motorDir = MOTOR_DESCEND;
-  motorSpeed = speed;
+  switch (caliPhase) {
+    case CALI_DESCEND:
+      if (depth >= DEEP_MIN_M) {
+        Serial.println("[CALI] descend complete — beginning PWM sweep");
+        caliPhase = CALI_SWEEP;
+        caliStepIndex = 0;
+        caliStepStartMs = millis();
+        caliStepStartDepth = depth;
+        motorSetSpeed(MOTOR_DESCEND, caliCurrentPwms()[0]);
+        Serial.printf("[CALI] step 1/%d pwm=%d  start_depth=%.2f m\n",
+                      caliCurrentNumPwms(), caliCurrentPwms()[0], depth);
+      } else if (millis() - caliPhaseStartMs > CALI_DESCEND_TIMEOUT_MS) {
+        caliAbort("descend timeout");
+      }
+      break;
 
-  if (millis() - rampTestLastLogMs >= 500) {
-    Serial.printf("[TEST] t=%lu ms  speed=%d/255\n", elapsed, speed);
-    rampTestLastLogMs = millis();
+    case CALI_SWEEP: {
+      const int *pwms = caliCurrentPwms();
+      const int numPwms = caliCurrentNumPwms();
+      const unsigned long stepMs = caliCurrentStepMs();
+      if (millis() - caliStepStartMs >= stepMs) {
+        float drift = depth - caliStepStartDepth;
+        const char *tag = caliInline ? "CALI inline" : "CALI";
+        Serial.printf("[%s] step %d/%d pwm=%d  drift=%+.3f m\n",
+                      tag, caliStepIndex + 1, numPwms, pwms[caliStepIndex], drift);
+        float absDrift = drift < 0 ? -drift : drift;
+        if (absDrift < caliBestAbsDrift) {
+          caliBestAbsDrift = absDrift;
+          caliBestPwm = pwms[caliStepIndex];
+        }
+        caliStepIndex++;
+        if (caliStepIndex >= numPwms) {
+          motorStop();
+          Serial.printf("[%s] best pwm=%d (|drift|=%.3f m)\n",
+                        tag, caliBestPwm, caliBestAbsDrift);
+          saveHoldSpeed(caliBestPwm);
+          motorSpeedHold = caliBestPwm;
+          caliPending = false;
+          char resp[40];
+          snprintf(resp, sizeof(resp), "CALI_OK pwm=%d", caliBestPwm);
+          if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
+          caliPhase = CALI_IDLE;
+          caliInline = false;
+        } else {
+          caliStepStartMs = millis();
+          caliStepStartDepth = depth;
+          motorSetSpeed(MOTOR_DESCEND, pwms[caliStepIndex]);
+        }
+      }
+      break;
+    }
+
+    default: break;
   }
 }
 
@@ -227,7 +330,7 @@ void rampTestTick() {
 bool holdControl(float depth, float lo, float hi) {
   float midpoint = (lo + hi) * 0.5f;
   if (depth < midpoint) {
-    motorSetSpeed(MOTOR_DESCEND, MOTOR_SPEED_HOLD);
+    motorSetSpeed(MOTOR_DESCEND, motorSpeedHold);
   } else {
     motorStop();   // rise passively
   }
@@ -260,7 +363,16 @@ void missionTick(float depth) {
   switch (missionState) {
     case MS_DESCEND:
       motorSet(MOTOR_DESCEND);
-      if (depth >= DEEP_MIN_M) enterState(MS_HOLD_DEEP);
+      if (depth >= DEEP_MIN_M) {
+        enterState(MS_HOLD_DEEP);
+        // First time hitting the deep band without saved calibration: piggyback an inline
+        // PWM sweep before the 30-second hold timer starts. This lets the float self-tune
+        // mid-mission when there was no chance to run `C` in advance.
+        if (caliPending) {
+          Serial.println("[MISSION] no calibration on file — running inline sweep first");
+          caliStartInlineAtDepth(depth);
+        }
+      }
       break;
 
     case MS_HOLD_DEEP: {
@@ -335,37 +447,17 @@ void scanI2C() {
   }
 }
 
-// Calibrate the current position as depth 0 m.
-void calibrateZero() {
-#if USE_DEPTH_SENSOR
-  Serial.printf("[zero calibration start — averaging %d samples]\n", ZERO_SAMPLES);
-  double sum = 0.0;
-  for (int i = 0; i < ZERO_SAMPLES; i++) {
-    sensor.read();
-    float raw = sensor.depth();
-    sum += raw;
-    Serial.printf("  sample %2d: %.4f m\n", i + 1, raw);
-    delay(ZERO_SAMPLE_DELAY_MS);
-  }
-  depthOffset = (float)(sum / ZERO_SAMPLES);
-  Serial.printf("[zero calibration done] offset = %.4f m\n", depthOffset);
-  Serial.println();
-#else
-  depthOffset = 0.0f;
-  Serial.println("[zero calibration SKIPPED — USE_DEPTH_SENSOR=0]");
-#endif
-}
-
-// Calibrated depth at the SENSOR position (surface = 0, positive when submerged).
+// Raw depth at the sensor position (bottom of float, mounted flush).
+// No zero calibration — the ±33 cm mission tolerance absorbs atmospheric noise.
 float calibratedDepth() {
 #if USE_DEPTH_SENSOR
-  return sensor.depth() - depthOffset;
+  return sensor.depth();
 #else
   return 0.0f;
 #endif
 }
 
-// Float-bottom depth (mission reference for both deep and shallow holds).
+// Float-bottom depth (mission reference for all bands and SURFACE detection).
 // All packet values, mission state machine inputs, and graphs use this.
 float reportedDepth() {
   return calibratedDepth() + SENSOR_OFFSET_FROM_BOTTOM;
@@ -414,11 +506,10 @@ void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
   Serial.printf("[CMD ←] %s\n", cmd);
 
   if      (strcmp(cmd, "DUMP") == 0) cmdDumpRequested = true;
-  else if (strcmp(cmd, "ZERO") == 0) cmdZeroRequested = true;
   else if (strcmp(cmd, "PING") == 0) cmdPingRequested = true;
   else if (strcmp(cmd, "STAR") == 0) cmdStartRequested = true;
   else if (strcmp(cmd, "ABRT") == 0) cmdAbortRequested = true;
-  else if (strcmp(cmd, "TEST") == 0) cmdTestRequested  = true;
+  else if (strcmp(cmd, "CALI") == 0) cmdCaliRequested = true;
   else Serial.printf("  unknown command: %s\n", cmd);
 }
 
@@ -437,6 +528,36 @@ void setupLittleFS() {
   fsReady = true;
   Serial.printf("[LittleFS] ready — %u / %u bytes used\n",
                 LittleFS.usedBytes(), LittleFS.totalBytes());
+}
+
+// Read calibrated HOLD PWM (1..255) from /cali.txt. Falls back silently if missing/invalid.
+bool loadHoldSpeed() {
+  if (!fsReady) return false;
+  if (!LittleFS.exists(CALI_FILE)) return false;
+  File f = LittleFS.open(CALI_FILE, "r");
+  if (!f) return false;
+  int v = f.parseInt();
+  f.close();
+  if (v <= 0 || v > 255) {
+    Serial.printf("[CALI] %s contains out-of-range value %d — ignored\n", CALI_FILE, v);
+    return false;
+  }
+  motorSpeedHold = v;
+  caliPending = false;
+  Serial.printf("[CALI] loaded MOTOR_SPEED_HOLD = %d from %s\n", v, CALI_FILE);
+  return true;
+}
+
+void saveHoldSpeed(int v) {
+  if (!fsReady) return;
+  File f = LittleFS.open(CALI_FILE, "w");
+  if (!f) {
+    Serial.println("[CALI] open(write) failed");
+    return;
+  }
+  f.printf("%d\n", v);
+  f.close();
+  Serial.printf("[CALI] saved MOTOR_SPEED_HOLD = %d to %s\n", v, CALI_FILE);
 }
 
 // Append one line to the mission log.
@@ -510,7 +631,7 @@ void setupEspNow() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("=== MS5837 depth sensor + zero calibration ===");
+  Serial.println("=== MS5837 depth sensor (no zero calibration — raw reading used) ===");
   Serial.printf("I2C pins: SDA=GPIO%d, SCL=GPIO%d\n", I2C_SDA, I2C_SCL);
 
   pinMode(BOOT_BUTTON, INPUT_PULLUP);
@@ -539,19 +660,32 @@ void setup() {
   Serial.println();
 #endif
 
-  calibrateZero();
   setupLittleFS();
+  loadHoldSpeed();
   setupEspNow();
 
-  Serial.println("Press BOOT button to recalibrate (do this after placing on the surface).");
-  Serial.println("Serial keys (mirror station): S=start mission, T=speed ramp test, X=abort, D=dump log.");
+  Serial.println("Press BOOT button to reset the mission clock (no zero calibration is performed).");
+  Serial.println("--------------------------------");
+  Serial.println(" Float serial keys (same as station wireless):");
+  Serial.println("   S = START  (run 3-profile mission)");
+  Serial.println("   X = ABORT  (stop motor, return to idle)");
+  Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
+  Serial.println("   D = DUMP   (read LittleFS mission log to serial)");
+  Serial.println("--------------------------------");
   Serial.printf("Company number: %s, packet interval: %d ms\n", COMPANY_NUMBER, PACKET_INTERVAL_MS);
   Serial.printf("Mission: %d profiles. Bottom-referenced bands:\n", PROFILE_COUNT);
   Serial.printf("  DEEP    %.2f-%.2f m  (target 2.50 m, bottom of float)\n",
                 DEEP_MIN_M, DEEP_MAX_M);
   Serial.printf("  SHALLOW %.2f-%.2f m  (target 0.40 m at top -> %.2f m at bottom)\n",
                 SHALLOW_MIN_M, SHALLOW_MAX_M, 0.40f + FLOAT_HEIGHT_M);
-  Serial.printf("Sensor offset from float bottom: %.4f m\n", SENSOR_OFFSET_FROM_BOTTOM);
+  Serial.printf("Sensor offset from float bottom: %.4f m (sensor flush with bottom)\n",
+                SENSOR_OFFSET_FROM_BOTTOM);
+  Serial.printf("Float height: %.4f m (13 in = 12\" tube + 2 × 0.5\" caps)\n", FLOAT_HEIGHT_M);
+  Serial.printf("Surface check (bottom-referenced): reportedDepth <= %.2f m\n", SURFACE_M);
+  Serial.printf("HOLD speed: %d/255 %s\n", motorSpeedHold,
+                caliPending
+                  ? "(default — auto-calibrates on first HOLD_DEEP, or run 'C' now)"
+                  : "(loaded from /cali.txt)");
   Serial.printf("Hold duration: %lu s\n", HOLD_DURATION_MS / 1000);
   Serial.println();
 
@@ -577,9 +711,8 @@ bool bootPressed() {
 
 void loop() {
   if (bootPressed()) {
-    Serial.println("\n[BOOT button — recalibrating]");
-    calibrateZero();
-    missionStartMs = millis();   // mission clock restarts at calibration
+    Serial.println("\n[BOOT button — mission clock reset]");
+    missionStartMs = millis();
     nextPacketMs = missionStartMs;
   }
 
@@ -590,15 +723,15 @@ void loop() {
       Serial.printf("[SERIAL] S — start mission (%d profiles)\n", PROFILE_COUNT);
       missionStart();
     }
-    else if (c == 'T' || c == 't') {
-      Serial.println("[SERIAL] T — speed ramp test");
-      rampTestStart();
-    }
     else if (c == 'X' || c == 'x') {
       Serial.println("[SERIAL] X — abort, motor off");
-      rampTestActive = false;
+      caliPhase = CALI_IDLE;
       motorStop();
       enterState(MS_IDLE);
+    }
+    else if (c == 'C' || c == 'c') {
+      Serial.println("[SERIAL] C — auto-calibrate hold PWM");
+      caliStart();
     }
     else if (c == 'D' || c == 'd') dumpLog();
   }
@@ -607,16 +740,6 @@ void loop() {
   if (cmdDumpRequested) {
     cmdDumpRequested = false;
     dumpLog();
-  }
-  if (cmdZeroRequested) {
-    cmdZeroRequested = false;
-    Serial.println("[CMD] ZERO handling start");
-    calibrateZero();
-    missionStartMs = millis();
-    nextPacketMs = missionStartMs;
-    char resp[80];
-    snprintf(resp, sizeof(resp), "ZERO_OK offset=%.4f m", depthOffset);
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)resp, strlen(resp));
   }
   if (cmdPingRequested) {
     cmdPingRequested = false;
@@ -632,25 +755,24 @@ void loop() {
   if (cmdAbortRequested) {
     cmdAbortRequested = false;
     Serial.println("[CMD] ABORT — stop everything");
-    rampTestActive = false;
+    caliPhase = CALI_IDLE;
     motorStop();
     enterState(MS_IDLE);
     if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"ABORTED", 7);
   }
-  if (cmdTestRequested) {
-    cmdTestRequested = false;
-    Serial.println("[CMD] TEST — speed ramp");
-    rampTestStart();
-    if (espNowReady) esp_now_send(stationMac, (const uint8_t *)"TEST_START", 10);
+  if (cmdCaliRequested) {
+    cmdCaliRequested = false;
+    Serial.println("[CMD] CALI — auto-calibrate hold PWM");
+    caliStart();
   }
 
 #if USE_DEPTH_SENSOR
   sensor.read();
 #endif
 
-  // Ramp test (manual motor verification) and mission state machine each tick.
-  rampTestTick();
-  if (!rampTestActive) {
+  // Calibration preempts the mission state machine while it runs.
+  caliTick(reportedDepth());
+  if (caliPhase == CALI_IDLE) {
     missionTick(reportedDepth());
   }
 

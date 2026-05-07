@@ -1,0 +1,535 @@
+TASK: MATE Floats Under the Ice!
+
+Once again, this year the preview mission focuses on MATE Floats! and includes all of the details of
+this task as well as hints and specifications for building a vertical profiling float (non-ROV device).
+The mission outlined below will be included in the competition manuals as one of the tasks for the
+2026 competition season.
+
+MATE Floats! 2026 is inspired by the National Science Foundation (NSF)-funded GO-BGC Project.
+The goal of GO-BGC is to build a global network of profiling floats with chemical and biological
+sensors to monitor circulation, chemistry, biology, and overall ocean health. Scientists, engineers,
+and technicians are using NSF grant funds to build and deploy 500 robotic ocean-monitoring floats
+around the globe. GO-BGC hit the 300 mark, with 325 out of the targeted 500 GO-BGC floats
+deployed or en route to be deployed from research vessels.
+
+Given the location of the 2026 MATE World Championship, this year’s MATE Floats! mission
+scenario takes place UNDER the ice. For regional competitions, this translates to a simulated
+under-ice task; for companies competing at the World Championship, this means operating under
+an ice sheet grown in the National Research Council’s (NRC) ice tank. At 90 meters long, 12 meters
+wide, and 3 meters deep, the NRC’s ice tank is one of the largest facilities of its kind in the world.
+With temperatures ranging down to -25 °C , this indoor, refrigerated facility simulates realistic
+Arctic and northern marine conditions and has the ability to grow ice at 2.5 millimeters an hour.
+
+Operating floats in polar waters where they may encounter ice is a real-world challenge faced by
+GO-BGC float technicians. Sensors and antennas, not to mention the float itself, run the risk of
+being damaged if the float attempts to surface with an ice sheet overhead. There is also the
+possibility of floats becoming entrained in sea ice and crushed. Therefore, floats deployed in polar
+waters must be engineered with ice-avoidance capabilities and with the ability to store data during
+under-ice profiles and delay transmission until the float is clear to surface in open water. “Ice-
+avoidance capabilities” translates to sensors measuring water temperature and chemistry to
+assess if ice is detected as the float ascends to the surface, along with the decision-making
+capability (i.e., an ice-avoidance algorithm) to reverse course and descend rather than continuing
+to surface.
+
+
+
+
+2026 MATE ROV Competition                                                                             1
+Simulating this within the context of a MATE ROV Competition mission task presents some
+challenges, especially without the ability to replicate the precise real-world conditions – even in an
+ice tank – that would allow a float with ice-avoidance capabilities to detect ice and reverse course
+
+So, instead of ascending to the surface and transmitting data to the mission station, companies
+participating in the 2026 MATE ROV Competition are challenged to design and build a float that
+ascends to a specific depth below the surface and holds that position for a defined period of time
+before initiating another descend to depth. Only after the float is recovered is it tasked with
+transmitting its data to the mission station.
+
+This task involves the following steps:
+
+Design and construct an operational vertical profiling float
+       ● Prior to the competition, design and construct a vertical profiling float – 5 points
+       ● Float communicates with the station prior to descending – 5 points
+       ● Float completes two vertical profiles under the ice
+              ○ Vertical profile 1
+                     ■ Float completes first vertical profile
+                             ● Using a buoyancy engine – 10 points
+                             ● Using a different mechanism – 5 points
+                     ■ Float maintains a depth of 2.5 meters for 30 seconds – 5 points
+                     ■ Float maintains a depth of 40 cm for 30 seconds – 5 points
+                             ● Float breaks the surface or contacts the ice sheet – 5 point
+                                penalty
+              ○ Vertical profile 2
+                     ■ Float completes second vertical profile
+                             ● Using a buoyancy engine – 10 points
+                             ● Using a different mechanism – 5 points
+                     ■ Float maintains a depth of 2.5 meters for 30 seconds – 5 points
+                     ■ Float maintains a depth of 40 cm for 30 seconds – 5 points
+                             ● Float breaks the surface or contacts the ice sheet – 5 point
+                                penalty
+       ● After recovery, float communicates with (transmits data autonomously to) the
+          station
+              ○ Float communicates data to the mission station – up to 10 points
+                     ■ Float communicates all data packets – 10 points
+                     ■ Float communicates at least one data packet – 5 points
+              ○ Profile is graphed as depth over time – 10 points
+
+                   OR
+
+       ● Company does not design and construct a vertical profiling float, or float does not
+         communicate data to the mission station after recovery
+            ○ Data provided by MATE is used to graph depth over time – 10 points
+
+2026 MATE ROV Competition                                                                            2
+Total points = 70 points
+
+Updates Highlighted in yellow:
+      Oct_01_2025: Pg. 9. Updated requirement of U-bolt.
+
+Product Demonstration Notes:
+Prior to the competition, companies must build a float capable of completing a vertical profile (i.e.,
+traveling from the surface to a depth of 2.5 meters, maintaining depth for 30 seconds, ascending to
+a depth of 30 cm and holding at that depth for 30 seconds) and collecting and transmitting data to
+the mission station.
+
+Companies that design their float with a buoyancy engine will receive additional points. A
+buoyancy engine moves fluid from inside the float to outside the float, displacing seawater and
+changing the density of the float. Using motors to move air or liquid does constitute a buoyancy
+engine. Using motors as thrusters to directly move the float, by turning a propeller or emitting a jet
+of water, is not using a buoyancy engine. Companies that do not use a buoyancy engine to
+complete their vertical profiles will receive fewer points. The float must also be capable of
+communicating data to a receiving device (i.e., the receiver) located at the surface at the mission
+station. The company is responsible for designing and constructing both the transmitter on the
+float and the receiver that displays the data at the mission station.
+
+Companies must submit a non-ROV device document outlining their float design, detailing its
+operation, and demonstrating that it does not violate any safety rules. This document must also
+detail the onboard battery design, fuse size for safe discharge of the current, and how the float
+communicates with the company’s receiver at the mission station. See DOC-004 for more details.
+This non-ROV device document must be submitted in advance of the competition. Companies will
+receive 5 points for designing and building a float. Successfully designing and building a float is
+defined as submitting a non-ROV device document that meets the requirements of DOC-004, i.e.,
+the float has a mechanism to move the float vertically in the water column and transporting the
+float to the product demonstration station.
+
+Companies competing at a regional may or not be required to submit float documentation.
+Contact your regional coordinator or visit your regional contest’s website to determine if you must
+submit your float design document prior to the competition. IF REQUIRED BY THE REGIONAL
+COMPETITION, COMPANIES MUST SUBMIT FLOAT DOCUMENTATION OR THEY WILL NOT BE
+RECEIVE POINTS FOR DESIGING AND BUILDING THE FLOAT.
+
+Companies may hand-launch the float at the side of the pool. Once deployed, the float must
+communicate with the mission station to receive points for communication. Deploying the float is
+defined as the float no longer in contact with any station personnel and floating on the surface.
+Once the float has been deployed, it must communicate to the receiver located on the surface at
+the shore station. Companies are responsible for constructing both the transmitter on the float
+and the receiver at the shore station.
+
+2026 MATE ROV Competition                                                                                3
+The float must communicate (i.e., transmit) the following information to the mission station,
+referred to as the defined data packet:
+    • Company number (provided by MATE a few weeks prior to the competition)
+    • Time data (UTC or local or float time [float time would be time since float starts recording])
+    • Pressure data and/or depth data
+    • Any additional data as required by the company to complete this task
+
+Pressure data must be displayed in pascals (pa) or kilopascals (kpa).
+Depth data must be displayed in meters (m) or centimeters (cm).
+
+Pressure/depth data must correlate to a set time transmitted from the float. For example, a
+defined data packet from EXPLORER 01 could be:
+       EX01 1:51:42 UTC 9.8 kpa               1.00 meters
+
+NOTE: MATE is requiring WHAT data is transmitted (i.e., company number, time, pressure/depth).
+Companies must determine HOW to transmit that data and should consider that there will be other
+companies transmitting data at same time.
+
+Companies will receive 5 points when their float is deployed into the water and successfully
+transmits the defined data packet to the receiver at the mission station upon deployment.
+Successfully transmitting the information is defined as the station judge seeing at least ONE
+defined data packet from the float on a screen or display at the mission station. The float only
+needs to transmit ONE defined data package prior to descending, but companies will not be
+penalized for sending additional defined data packets. The receiver should not receive
+transmissions from any source other than the float. The float must transmit the defined data
+packet before starting its first vertical profile. If the float does not transmit and has not started its
+first vertical profile, companies may recover the float and attempt repairs. If the float descends
+before transmitting, companies can continue with the remaining float tasks but will not receive
+points for transmitting before the first vertical profile.
+
+The float should attempt to complete two vertical profiles.
+
+The float will be considered to be under the ice. For teams at a regional competition, ice will be
+assumed to be on the surface. At the World Championship, this task will be conducted in the
+NRC’s tank with an ice sheet between 1 cm and 5 cm thick at the surface. Companies will hand-
+launch their floats through a 1 meter x 1 meter hole cut into the ice sheet. The water in the tank will
+be comprised of an EGADS (ethylene glycol, aliphatic detergent, and sugar) solution. The EGADS
+water solution has a specific gravity of approximately 1.025 but can vary slightly. Companies
+should consider bringing warm clothing, especially gloves that may become wet when deploying
+the float, for working in the cold environment and water of the ice tank.
+
+A vertical profile under the ice is defined as the float on the surface and descending to and
+maintaining a depth of 2.5 meters (+/- 33 cm) for 30 seconds. After maintaining depth at 2.5
+
+2026 MATE ROV Competition                                                                                   4
+meters, the float must ascend to a depth of 40 centimeters (+/- 33 cm) but should not break the
+surface or contact the ice. The float must maintain a depth at 40 cm for 30 seconds. A float that
+breaks the surface at any time after descending, or contacts the ice sheet, will be penalized 5
+points on that vertical profile.
+
+Companies will receive 10 points for successfully completing their first vertical profile using a
+buoyancy engine, or 5 points if they use a different mechanism. Successfully completing a vertical
+profile is defined as the float descending to 2.5 meters (+/- 33 cm) then ascending to 40 cm (+/- 33
+cm). For example, a float that descends to the bottom of the pool, then ascends to the surface
+would be considered to have completed a vertical profile. In this example the float did descend to
+2.5 meters (and went beyond that), and then ascended to 40 cm (and went beyond that as well)
+This float would not receive points for maintaining depth at either 2.5 meters or 40 cm and would
+also be penalized for breaking the surface / contacting the ice sheet, but the float would be
+considered to have completed a vertical profile.
+
+During the vertical profile, the float must maintain a depth of 2.5 meters for 30 seconds.
+Companies will receive 5 points for successfully maintaining a depth of 2.5 meters for 30 seconds.
+This is defined as the bottom of the float at 2.5 meters of depth (+/- 33 cm) for 30 seconds. The
+bottom of the float should be used for calculating this depth, i.e., the bottom of the float should be
+at 2.5 meters (+/- 33 cm). After recovery and transmission, the data packets should show seven (7)
+sequential data packets where the depth is 2.27 meters to 2.83 meters. Companies must display
+all data packets on a screen for the station judge; the company should point out the seven
+sequential data packets at the proper depth. If the float drifts outside of this range at any time
+during the 30 seconds, the float must return to the designated range for an entirely new 30 second
+period. For example, if the float maintains depth at 2.76 meters for 20 seconds but then descends
+to 2.91 meters (outside of the given range), the float must ascend back into the range for an entire
+30 seconds, not just the remaining 10 seconds from the first attempt at maintaining of depth. If the
+float’s depth/pressure sensor is not at the bottom of the float, communicate the offset to the
+station judge. For example, if the float’s depth/pressure sensor is 25 cm above the bottom of the
+float, when the bottom of the float is at 2.5 meters, the pressure sensor would be at 2.25 meters.
+Thus, the proper range for the depth/pressure sensor would be 2.58 meters to 1.92 meters.
+Communicate that adjusted range to the judge prior to deployment.
+
+After maintaining a depth of 2.5 meters, the float should ascend to 40 cm (+/- 33 cm), just beneath
+the surface of the ice sheet. Companies will receive 5 points for successfully maintaining a depth
+of 40 cm for 30 seconds. This is defined as the top of the float at 40 cm of depth (+/- 33 cm) for 30
+seconds. The top of the float should be used for calculating this depth, i.e. the top of the float
+should be at 40 cm (+/- 33 cm). After recovery and transmission, the data packets should show
+seven (7) sequential data packets where the depth is 0.07 meters to 0.73 meters. Companies must
+display all data packets on a screen for the station judge; the company should point out the seven
+sequential data packets at the proper depth. If the float drifts outside of this range at any time
+during the 30 seconds, the float must return to the designated range for an entirely new 30 second
+period. For example, if the float maintains a depth at 52 cm for 20 seconds but then descends to
+75 cm (outside the given range), the float must ascend back into range for an entire 30 seconds, not
+
+
+2026 MATE ROV Competition                                                                              5
+just the remaining 10 seconds from the first maintaining of depth. If the float’s depth/pressure
+sensor is not at the top of the float, communicate the offset to the station judge. Communicate
+that adjusted range to the judge prior to deployment.
+
+As noted, if at any time during a vertical profile the float breaks the surface or contacts the ice
+sheet, companies will be penalized 5 points for that vertical profile.
+
+Companies must show the station judge data packets confirming the proper depth range. There
+must be seven sequential data packets spanning 30 seconds (0, 5, 10, 15, 20, 25 and 30) for each
+depth. If the float is not recovered, or if the float does not transmit data packets to the receiver,
+companies will not be awarded points for maintaining depth.
+
+The float should then attempt to complete a second vertical profile. Companies will receive 10
+points for successfully completing a second vertical profile using a buoyancy engine, or 5 points if
+they use a different mechanism. Successfully completing a vertical profile is defined as the float
+descending to 2.5 meters (+/- 33 cm) then ascending to 40 cm (+/- 33 cm).
+
+During the second vertical profile, companies will receive 5 points for successfully maintaining a
+depth of 2.5 meters for 30 seconds. This is defined as the bottom of the float at 2.5 meters of depth
+(+/- 33 cm) for 30 seconds. Data packets should show seven (7) sequential data packets where the
+depth is 2.27 meters to 2.83 meters, offset for the position of the sensor. Companies should
+indicate to the station judge the seven data packets at the proper depth for the second vertical
+profile.
+
+Companies will receive 5 points for successfully maintaining a depth of 40 cm for 30 seconds. This
+is defined as the top of the float at 40 cm of depth (+/- 33 cm) for 30 seconds. When the float is
+recovered to the surface and data packets received, the data packets should show seven (7)
+sequential data packets where the depth is 0.07 meters to 0.73 meters, offset for the position of
+the sensor. Companies should indicate to the station judge the seven data packets at the proper
+depth for the second vertical profile
+
+After successfully completing the second vertical profile, the in-water portion of the float task is
+complete. The float can be recovered. Recovery is defined as the float being returned to the
+surface, side of the pool. At regional competitions, the company’s ROV should recover the float to
+the surface, side of the pool. At the World Championship, an ROV piloted by MATE staff will
+recover the float to the surface side of the pool. In the ice tank at the World Championship,
+companies should inform the station judge that they are ready to recover their vehicle. The station
+judge will stop their mission time and allow the MATE ROV to recover their float.
+
+If a penalty occurs, or if the float does not maintain the proper depth for 30 seconds, companies
+will not receive full points for that vertical profile. It is up to the company to decide when they are
+ready to recover the float and therefore when the in-water portion of the float task is complete.
+
+
+
+
+2026 MATE ROV Competition                                                                                 6
+If upon recovery and transmission it is discovered that the float did not maintain the proper depth,
+companies will not receive points for that portion of the task. Companies are not permitted to
+return their float to the water to attempt to complete additional profiles. If prior to recovery the
+company believes their float may not have maintained depth, or if the company knows their float
+contacted the ice or breached the surface, companies may have the float complete additional
+vertical profiles in an attempt to increase their score. If the float completes an additional vertical
+profile that would receive a higher score, companies may use that score instead of the penalized
+profile score.
+
+Companies may not mix and match portions of a vertical profile, the entire vertical profile must be
+considered. For example, if during the first vertical profile, the float does not maintain depth at 2.5
+meters but does maintain depth at 40 cm (and does not break the surface), companies would
+receive 15 points for that vertical profile. If during a subsequent profile (beyond the two profiles
+required), the float maintains depth at 2.5 meters, maintains depth at 40 cm, but breaks the
+surface, companies would still only receive 15 points for that vertical profile; companies are not
+permitted to pair not breaking the surface in the first profile with maintaining the proper depth in
+the subsequent profile.
+
+Companies are permitted to include visual cues (e.g., colored LEDs or other devices) that can be
+detected from the surface to signify a successful profile. For example, a company could have a
+blue LED signal when their float is within the 2.5 meter range, and a green LED signal for when their
+float is within the 0.4 meter range. A company member on the surface could track the timing of
+these visual cues in order to determine if the float needs to continue profiling or whether it can be
+recovered. Visual cues are optional and will not influence scoring but may help the company to
+determine when to recover their float.
+
+Once recovered onto the pool deck, the float should communicate data by transmitting data
+packets wirelessly to the receiver. Companies will receive 10 points when the float successfully
+communicates all of its data packets to the shore station. Successfully communicating all data
+packets is defined as showing the station judge one data packet from every 5 seconds of both
+vertical profiles. If the float does not communicate all data packets but successfully
+communicates at least one data packet from the vertical profiles, the company will receive 5
+points. Successfully communicating at least one data packet, but not all data packets, is defined
+as at least one data packet from the vertical profiles being shown to the station judge. This data
+packet must be from after the float descends; it cannot be a data packet from before the float
+began vertical profiles.
+
+Companies will use the data packets received from the float to graph depth over time. Companies
+will receive 10 points for successfully graphing depth over time. Successfully graphing depth over
+time is defined as showing the station judge a graph with time on the X axis and depth on the Y axis.
+Companies must graph the data received from their vertical profiles, and there must be at least 20
+data packets included on the graph. If the float did not collect and transmit 20 data packets, the
+company will not be able to graph its data and may instead elect to graph the data provided by
+
+
+
+2026 MATE ROV Competition                                                                                7
+MATE. Companies must use a computer or device to graph the data; companies may not draw a
+graph by hand. Data points may be entered (or cut and pasted) to a device by hand.
+
+At a regional competition, recovery of the float and data transmission, as well as graphing of that
+data must occur within the 15-minute product demonstration time. At the World Championship,
+companies will have 15 minutes for the task, but the time will stop for the MATE ROV to recover
+their float. Once the float is recovered and in possession of a member of the company, the station
+judge will restart the product demonstration time and the company will have the remaining time to
+receive communication from the float and graph the data. Data transmission and graphing may
+happen at a data station away from mission station. If that is the case, time will not restart until the
+company arrives at the data station.
+
+Data will be available from MATE if the company does not build a float or if the float fails to
+communicate after it is recovered from the water. Likewise, if the float does not communicate at
+least 20 data packets from the profile, data will be available from MATE. Graphing MATE data
+replaces graphing profile data AND the float communicating all data packets to the shore station.
+Companies that graph MATE data may still earn points for completing vertical profiles and
+transmitting at least one data packet.
+
+Companies that choose to use MATE data should inform the station judge that they require this
+data. The judge will then provide a set of time and depth data to the company. Once a company
+requests data from MATE, they can no longer receive points for communicating all data packets to
+the station or for graphing data from their own float.
+
+Companies will receive 10 points for successfully graphing depth over time. Successfully graphing
+depth over time is defined as showing the station judge a graph with time on the X axis and depth
+on the Y axis. Companies must use a computer or device to graph the data; companies may not
+draw a graph by hand. Data points may be entered (or cut and pasted) to a device by hand.
+
+*Regional competitions may take place in pools that are shallower than 2.5 meters +/- 33 cm. If
+that is the case, contact your regional coordinator or visit your regional contest’s website to
+determine what depth the float should maintain depth at and what depth you must reach before
+you start your ascent for collecting sensor data.
+
+Float Specifications:
+The float must be less than 1 meter in overall height.
+The float must be less than 18 cm in diameter/length/width.
+The float may not have an airline to the surface or a rope/line to the surface or the bottom. The
+entire float must be less than 1 meter in length, including an antenna for broadcasting data. The
+float must be less than 1 meter in length for the entire mission, it cannot have multiple
+compartments that separate, nor may it raise or lower any objects beyond the 1-meter limit.
+
+New for 2026!!!
+
+
+
+2026 MATE ROV Competition                                                                             8
+Companies are REQUIRED to incorporate a feature to aid recovery of their floats by the MATE
+Competition ROV under the ice. Potential examples include a loop of rope or wire, a U-bolt (#310
+U-bolt or one of larger diameter), or any other means that is at least 5 cm in width, protrudes 5 cm
+from the float, and by which the MATE ROV can grasp and return the float to the surface.
+
+The feature must be easily accessible and can protrude beyond the 18 cm maximum diameter of
+the float. MATE recommends incorporating redundant features to help ensure a quick and easy
+recovery; the more quickly and easily the float is to recover, the more time a company will have to
+evaluate the data.
+
+The float must operate independently; it cannot be connected to the shore by a tether, and the ROV
+cannot interact with the float other than during recovery.
+
+Any air used on the float must be stored on the float. Floats may not have an airline to the surface.
+All electrical power to the float MUST go through a single fuse. The float will operate as a non-ROV
+device (see 3.3.1 Non-ROV Device Power Specifications for additional rules on powering a non-
+ROV device). Small button batteries are allowed to power timing devices on the float. All other
+batteries must adhere to the non-ROV device battery rules.
+
+DOC-004: Non-ROV device design document: Companies will be required to submit a written and
+photographic description of their non-ROV device. This document is limited to 2 pages in length.
+Companies must measure the full load amps of the float device and determine their fuse size from
+this measurement. This non-ROV device design document must contain:
+
+    •   A photo or diagram of the non-ROV device.
+    •   The type of batteries used.
+    •   A photo of all battery packs.
+    •   A photo of the fuse(s) used on the ROV.
+    •   Fuse determination showing the full load amps measurements for both waiting mode and
+        buoyancy change mode.
+
+For the 2026 MATE Floats! task, this document must also include:
+    • A description of the buoyancy engine or different mechanism used to complete vertical
+        profiles.
+    • A description of how the float communicates with the shore side receiver. If any
+        commands are given to the float after deployment, those communications must also be
+        described.
+    • A description of how the battery pack was designed to safely fulfill the full load amps needs
+        and the voltage requirements of the float device.
+
+A SID of the non-ROV device document must be included with the non-ROV device design
+document. This SID must be one page in length and is in addition to the 2 pages required for the
+non-ROV device design document (i.e. DOC-004 can be a total of 3 pages, 2 pages for a
+description, one page for a SID). The SID must include:
+
+2026 MATE ROV Competition                                                                               9
+   •   A fuse using a standard fuse symbol
+   •   Full load amps fuse measurements
+
+
+
+3.3.1 Non-ROV Devices
+The vertical profiling float qualifies as a non-ROV device in 2026.
+
+ELEC-NRD-001: The vertical profiling float cannot be powered from the surface. If the float is
+powered, it must use onboard batteries. Voltage is limited to 12 VDC maximum; amperage is
+limited to 5 amps maximum. All power for the non-ROV device must go through a single fuse (see
+ELEC-NRD-005).
+
+ELEC-NRD-002: The vertical profiling float non-ROV device may utilize thrusters but may not
+include any cameras. Vertical profiling floats cannot use a camera onboard to take images or video
+of pressure data and transmit those images/videos to the surface station.
+
+NEW for 2026!!! New battery limitations are in place. Read the following information carefully!
+ELEC-NRD-003: Onboard power is allowed for non-ROV devices. If onboard batteries are being
+used, the following specifications must be met.
+   • NiMH (Nickel Metal Hydride) and AGM (Absorbed Glass-Mat) batteries only. Alkaline
+        batteries are not allowed.
+   • NiMH battery packs consisting of 9-volt, AA, C or D cell batteries are allowed. See table
+        below for maximum amperage allowed for each battery type.
+   • Larger NiMH and AGM (Absorbed Glass-Mat) 12-volt batteries are also allowed. This
+        includes large (brick sized) batteries.
+   • No other size or chemical composition is allowed. 12-volt outdoor, re-chargeable batteries
+        are not allowed. Hi discharge LiPo batteries are not allowed.
+   • Batteries are mounted in a manner that they are not loose inside the container.
+
+All batteries are limited to the maximum allowed current shown in this table. Above this current,
+batteries will overheat.
+
+
+
+                          Battery Type                 Maximum Fuse Size
+                             NiMH AA                              2.0 A
+                           NiMH C or D                            5.0 A
+                           NiMH 9-volt                          200mA
+                       NiMH* / AGM 12V                            5.0 A
+
+
+2026 MATE ROV Competition                                                                           10
+               *The 5.0 amp maximum fuse size for NiMH 12 volt batteries refers only to the larger,
+               brick sized batteries. 12-volt battery packs, consisting of multiple AA or 9-volt
+               batteries, require the smaller fuse size for those batteries.
+
+To determine a NiMH battery’s maximum fuse size, see the individual battery’s mAH (milliamp
+hours) rating. Divide that number by 1000. For example, if a NiMH AA battery has a rating of 2300
+mAH, its maximum current would be 2.3 amps, requiring a 2-amp fuse. If a NiMH battery has a
+rating of only 1900 mAH, its maximum current would be 1.9 amps, requiring a 1-amp fuse. The
+above table was derived from the general mAH from the types of batteries in question.
+
+ELEC-NRD-004: Battery fusing for non-ROV devices is an important consideration and the
+following rules must be adhered to.
+    • A single fuse must be utilized that will shut down all power sources in the non-ROV device if
+        the fuse blows.
+    • A fuse (5 amps max) must be installed within 5 cm of the battery positive terminal.
+    • All fuses, when installed, must be able to be visibly inspected for amperage through a clear
+        housing or immediately after an opaque NRD device housing is removed without the need
+        to uncover the fuse.
+    • Note for 2026!!! Cartridge, ATO type blade fuses or MINI blade fuses CAN be used for
+        fusing NiMH and AGM batteries. The fuses to select from are 1A, 2A, 3A, 4A and 5A fuses.
+        These fuses provide easy visual inspection for amperage using industry standard color
+        codes.
+        Fuse Reference: ATO fuse         MINI fuse
+                These fuses are all rated for 32VDC and are color coded for amperage.
+    • All blade fuses MUST correspond to the standardized color codes listed on the fuse links
+        above. All cartridge fuses must be readily accessible and have the current stamped on the
+        end of the fuse. Minimum DC voltage for the fuse must be 32 volts.
+    • The maximum distance from a battery pack to any fuse is 5 cm.
+    • Batteries in Series: No voltage over a nominal 12V is allowed. This means no more than
+        eight 1.5V alkaline batteries in series.
+    • Batteries in Parallel: Batteries may be placed in parallel to increase the current available to
+        the system within the following limits:
+            o In no case shall the current from the pack exceed 5A.
+            o The number of series strings in parallel is used as a multiplier to determine the fuse
+                size. For example, using AA batteries, the maximum fuse size is 2.0 amps. If two
+                battery strings are placed in parallel, the maximum fuse size is 2 amps (2 * 2.0A =
+                4.0 Amps).
+    • Note for 2026!!! For systems with multiple battery packs, the battery packs should be
+        connected on the negative terminals with the fuse (5 amps max) located off of the common
+        negative terminal connection. Each individual battery pack should also be fused with the
+        properly sized fuse for that battery pack. Note that a single battery wired in parallel is
+        considered a battery pack. For example, five NiMH 9-volt batteries wired in parallel, the
+        maximum fuse size is 1 amp (5 * 0.2A = 1.0 A). Each 9-volt battery would need to be
+        individually fused at 0.2A as well.
+
+2026 MATE ROV Competition                                                                           11
+ELEC-NRD-005: Full Load Amps Value. Companies MUST measure the full load amps (FLA) of
+their device during waiting mode (motors off) AND during buoyancy change mode (motors on). The
+type of battery pack allowed for their system can be determined using the full load amps
+measurement (See ELEC-008E in the competition manual for more information).
+
+Using the non-ROV device full load amps values, companies should select the standard fuse
+closest to their FLA.
+
+ELEC-NRD-006: The enclosure housing must be designed so that it will open if the pressure inside
+the housing is greater than the outside pressure.
+
+There are two allowable methods for pressure relief:
+   1. A pressure relief hole of a minimum of at least 2.5 cm in diameter. This hole can be plugged
+       up with a rubber stopper but must be friction fit. Threads or other fastening methods are
+       not allowed. Holes less than 2.5 cm in diameter will not pass safety inspection.
+   2. The enclosure is built in a manner that an end cap will pop off if under pressure. This can be
+       an internal or external cap with O-rings to provide sealing. The sealing diameter of the end
+       cap must be 2.5 cm in diameter or greater (this limits the smallest ID of an enclosure to 2.5
+       cm).
+
+Additional notes:
+   • Under no condition should the housing be built with fasteners to hold the housing together.
+       There must be at least one 2.5 cm or larger opening that serves as a pressure release.
+
+
+2026 MATE ROV Competition                                                                        12
+   Note for 2026!!!
+   • Utilization of pressure release valves are not acceptable as they cannot be tested at the
+      competition site.
+   • Pop-off end caps that utilize a tightening mechanism (hose clamp, Twist-Tite) are not
+      allowed.
+
+ELEC-NRD-007: A SID must be submitted for any non-ROV device that uses electrical power
+
+
+
+
+2026 MATE ROV Competition                                                                        13
+

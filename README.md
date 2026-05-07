@@ -11,7 +11,7 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
   - When the pump stops, residual positive buoyancy lifts the float passively → no reverse pumping needed
   - HOLD bands use a midpoint-based bang-bang: pump on (gentle) when shallower than midpoint, pump off when deeper
   - ENB jumper must be REMOVED — speed is driven by GPIO4 PWM (0=stop, 255=full)
-- **Float geometry**: 12 in (30.48 cm) tall, depth sensor mounted at the 6 in midpoint. All reported depths are translated to the float's BOTTOM (mission reference).
+- **Float geometry**: 13 in (33.02 cm) total — 12 in tube + 0.5 in top cap + 0.5 in bottom cap. The depth sensor sits in the bottom cap **flush with the float's bottom face**, so the sensor reading equals the bottom-of-float depth with zero offset. Bottom-mounting keeps the sensor submerged the longest as the float rises and removes any need to disclose a sensor offset to the judge for the 2.5 m hold.
 
 > **First time setting up?** See [`docs/prerequisites.md`](docs/prerequisites.md) — installs uv, syncs the `tools/` venv, and walks through the two-terminal mission flow.
 
@@ -37,13 +37,12 @@ While the float is on the surface or just after recovery, send commands by **typ
 | Key | Command sent    | Float behavior                                                                                       | Response (station serial)      |
 | --- | --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `S` | `STAR` (=START) | Runs the autonomous mission: 3 vertical profiles (descend → 2.5 m hold 30 s → 40 cm hold 30 s) × 3   | `[RX] MISSION_START` then state logs |
-| `X` | `ABRT` (=ABORT) | Stops everything (motor off, ramp test off, mission state machine returned to IDLE)                  | `[RX] ABORTED`                 |
-| `T` | `TEST`          | 10 s motor speed ramp self-test (0 → 255 → 0, descend direction). Verifies ENB PWM wiring.           | `[RX] TEST_START`              |
-| `Z` | `ZERO`          | Recalibrates depth zero (16-sample average) + resets mission timer                                   | `[RX] ZERO_OK offset=X.XXXX m` |
+| `X` | `ABRT` (=ABORT) | Stops everything (motor off, mission state machine returned to IDLE)                                 | `[RX] ABORTED`                 |
+| `C` | `CALI`          | Manual in-water HOLD-PWM calibration: descends to ≥ 2.27 m, sweeps PWM 60–180 in 7 × 4 s steps, picks the lowest-drift value, saves to `/cali.txt`. (If skipped, the float runs an inline 4-step sweep automatically during the first mission HOLD_DEEP.) Auto-loaded on every boot. | `[RX] CALI_OK pwm=N`           |
 | `P` | `PING`          | Connection check reply                                                                               | `[RX] PONG`                    |
 | `D` | `DUMP`          | Wirelessly transmits the entire LittleFS mission log line by line (50 ms gap)                        | `[RX] PVPHSROV ...` × N        |
 
-The float serial monitor accepts the same keys (`S`/`X`/`T`/`D`) for direct local control during bench debugging — no station required.
+The float serial monitor accepts the same keys (`S`/`X`/`C`/`D`) for direct local control during bench debugging — no station required.
 
 **Local commands (handled by the station itself):**
 
@@ -64,19 +63,18 @@ Three actors — **Laptop**, **Station** (ground board), and **Float** (submergi
 
 | #   | Actor           | Action                                                                             | Score    |
 | --- | --------------- | ---------------------------------------------------------------------------------- | -------- |
-| 1   | Station + Float | Boot both boards (USB / battery)                                                   | —        |
-| 2   | Laptop          | Open the station serial monitor (terminal 1)                                       | —        |
-| 3   | Operator        | Place the float on the water (surface)                                             | —        |
-| 4   | Laptop          | `Z` → station → ZERO command to float (zero-point calibration at the surface)      | ② 5 pts  |
-| 5   | Laptop          | `S` → station → STAR command → float runs 3 vertical profiles autonomously         | ③④ 50 pts |
-| 6   | Float           | No wireless reach while submerged → appends only to its own LittleFS every 5 s     | —        |
-| 7   | Operator        | Float surfaces between profiles and at the end → wireless restored                 | —        |
-| 8   | Laptop          | `D` → station → DUMP command to float → station saves every packet to its LittleFS | ⑤ 10 pts |
-| 9   | Laptop          | In terminal 2: `python read_and_graph.py` → produces `received.png` chart          | ⑥ 10 pts |
+| 1   | Station + Float | Boot both boards (USB / battery). The float begins transmitting 5-second packets immediately. | —        |
+| 2   | Laptop          | Open the station serial monitor (terminal 1) and verify packets are coming in.     | —        |
+| 3   | Operator        | Place the float on the water (surface). At least one packet must reach the station before the first profile starts. | ② 5 pts  |
+| 4   | Laptop          | `S` → station → STAR command → float runs 3 vertical profiles autonomously         | ③④ 50 pts |
+| 5   | Float           | No wireless reach while submerged → appends only to its own LittleFS every 5 s     | —        |
+| 6   | Operator        | Float surfaces between profiles and at the end → wireless restored                 | —        |
+| 7   | Laptop          | `D` → station → DUMP command to float → station saves every packet to its LittleFS | ⑤ 10 pts |
+| 8   | Laptop          | In terminal 2: `python read_and_graph.py` → produces `received.png` chart          | ⑥ 10 pts |
 
 **Key-input responsibilities:**
 
-- `S` `X` `T` `Z` `P` `D` = the station receives them and forwards via ESP-NOW to the float
+- `S` `X` `C` `P` `D` = the station receives them and forwards via ESP-NOW to the float
 - `R` `E` `I` = handled locally by the station (LittleFS dump / erase / info). Either typed by the operator or sent automatically by the Python tool.
 
 See [`docs/prerequisites.md`](docs/prerequisites.md) for the exact two-terminal commands (monitor + graph).
@@ -105,6 +103,7 @@ docs/
 
 ## References
 
+- [How it works](docs/how-it-works.md) — Firmware internals: state machine, buoyancy engine, depth coordinates, failsafes ([한글](docs/how-it-works_ko.md))
 - [Prerequisites](docs/prerequisites.md) — Install + two-terminal mission flow (macOS / Windows)
 - [Mission analysis](docs/2026_MATE_Floats_분석.md) — Scoring / packet format / physical & electrical constraints
 - [TODO](TODO.md) — Mission backlog + completed decisions

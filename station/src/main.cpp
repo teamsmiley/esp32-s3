@@ -119,8 +119,7 @@ void printHelp() {
   Serial.println(" Keys -> float commands:");
   Serial.println("   S = START  (run 3-profile mission)");
   Serial.println("   X = ABORT  (stop motor, return to idle)");
-  Serial.println("   T = TEST   (10s speed ramp self-test)");
-  Serial.println("   Z = ZERO   (recalibrate depth zero)");
+  Serial.println("   C = CALI   (in-water HOLD-PWM auto-calibration → /cali.txt)");
   Serial.println("   P = PING   (connection check)");
   Serial.println("   D = DUMP   (dump LittleFS log)");
   Serial.println(" Keys -> station local:");
@@ -171,11 +170,10 @@ void loop() {
     char c = Serial.read();
     switch (c) {
       case 'D': case 'd': sendCommand("DUMP"); break;
-      case 'Z': case 'z': sendCommand("ZERO"); break;
       case 'P': case 'p': sendCommand("PING"); break;
       case 'S': case 's': sendCommand("STAR"); break;  // shortened to 4 bytes
       case 'X': case 'x': sendCommand("ABRT"); break;
-      case 'T': case 't': sendCommand("TEST"); break;
+      case 'C': case 'c': sendCommand("CALI"); break;
       case 'R': case 'r': readRxLog(); break;
       case 'E': case 'e': eraseRxLog(); break;
       case 'I': case 'i': infoRxLog(); break;
