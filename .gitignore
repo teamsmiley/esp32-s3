@@ -6,3 +6,5 @@ tools/mission.png
 tools/__pycache__/
 .claude
 CLAUDE.md
+tools/received_depth.png
+tools/received.log

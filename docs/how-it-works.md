@@ -103,6 +103,8 @@ The packet output (`PVPHSROV HH:MM:SS XX.X kPa Y.YY meters`) reports `reportedDe
 
 The float uses a single DC pump driven by an L298N H-bridge, with PWM speed control on `ENB`.
 
+**Pump model**: 12 V 750 GPH cartridge bilge pump motor.
+
 | Pin | GPIO | Role |
 |---|---|---|
 | `IN3` | 17 | direction A (HIGH = intake) |

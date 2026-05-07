@@ -103,6 +103,8 @@ SHALLOW_MAX_M = 0.73 m + FLOAT_HEIGHT = 1.0348 m   // top 73cm → bottom 변환
 
 플로트는 L298N H-bridge로 구동되는 단일 DC 펌프를 사용하며, `ENB`에 PWM 속도 제어가 적용됩니다.
 
+**펌프 모델**: 12 V 750 GPH 카트리지 빌지 펌프 모터 (cartridge bilge pump motor).
+
 | 핀    | GPIO | 역할                             |
 | ----- | ---- | -------------------------------- |
 | `IN3` | 17   | 방향 A (HIGH = 흡입)             |

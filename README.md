@@ -6,7 +6,7 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
 - **Framework**: Arduino (PlatformIO)
 - **Wireless**: ESP-NOW bidirectional unicast (MAC whitelist prevents cross-team interference at competition)
 - **Depth sensor**: BlueRobotics MS5837-30BA (I2C 0x76, SDA=GPIO8, SCL=GPIO9)
-- **Buoyancy engine**: One-way DC pump on L298N Motor B — IN3=GPIO17, IN4=GPIO18, ENB=GPIO4 (PWM speed)
+- **Buoyancy engine**: One-way 12 V 750 GPH cartridge bilge pump motor on L298N Motor B — IN3=GPIO17, IN4=GPIO18, ENB=GPIO4 (PWM speed)
   - Pump runs ONLY in the descent direction (IN3 HIGH, IN4 LOW): water intake → float sinks
   - When the pump stops, residual positive buoyancy lifts the float passively → no reverse pumping needed
   - HOLD bands use a midpoint-based bang-bang: pump on (gentle) when shallower than midpoint, pump off when deeper
