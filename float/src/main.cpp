@@ -484,8 +484,8 @@ void formatPacket(char *out, size_t outLen) {
 #endif
   // Reported depth is the float BOTTOM (sensor reading + 6 in offset).
   float depthM = reportedDepth();
-  snprintf(out, outLen, "%s %s %.1f kPa %.2f meters",
-           COMPANY_NUMBER, timeStr, kPa, depthM);
+  snprintf(out, outLen, "%s %s %.1f kPa %.2f meters pwm=%d",
+           COMPANY_NUMBER, timeStr, kPa, depthM, motorSpeed);
 }
 
 // ESP-NOW send-result callback (for debugging)
