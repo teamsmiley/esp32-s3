@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""MATE Floats 2026 — pull the station's received.log over USB and produce a graph PNG.
+"""MATE Floats 2026 — pull the station's received.log over USB and produce graph PNGs.
 
 Flow (no options, run once):
   1. Auto-detect the ESP32-S3 USB port
   2. Open the serial port and send 'R' (triggers the station dump)
   3. Save the lines the station streams back into received.log
   4. Stop automatically when '---- END received.log ----' is seen
-  5. Parse the packets and produce received.png (depth-vs-time graph)
+  5. Parse the packets and produce received.png (depth-vs-time)
+     and received_pwm.png (pwm-vs-time, if any packet carries a pwm field)
 
 Usage:
   uv run read_and_graph.py
@@ -18,12 +19,13 @@ from pathlib import Path
 
 PACKET_RE = re.compile(
     r"^(?:\[RX\]\s+)?(\w+)\s+(\d{2}):(\d{2}):(\d{2})\s+"
-    r"([\d.]+)\s+kPa\s+([\d.]+)\s+meters\s*$"
+    r"([\d.]+)\s+kPa\s+([\d.]+)\s+meters(?:\s+pwm=(\d+))?\s*$"
 )
 END_MARKER = "---- END received.log ----"
 ESP32_S3_VID = 0x303A
 LOG_PATH = Path("received.log")
-PNG_PATH = Path("received.png")
+DEPTH_PNG_PATH = Path("received_depth.png")
+PWM_PNG_PATH = Path("received_pwm.png")
 
 # Float geometry — packet depth is the float BOTTOM. Top = bottom - FLOAT_HEIGHT_M.
 # Total length is 13 in (12" tube + two 0.5" end caps).
@@ -48,13 +50,14 @@ def parse_packet(line: str):
     m = PACKET_RE.match(line.strip())
     if not m:
         return None
-    _, hh, mm, ss, kpa, depth = m.groups()
-    return int(hh) * 3600 + int(mm) * 60 + int(ss), float(depth)
+    _, hh, mm, ss, kpa, depth, pwm = m.groups()
+    t = int(hh) * 3600 + int(mm) * 60 + int(ss)
+    return t, float(depth), int(pwm) if pwm is not None else None
 
 
-def make_graph(points: list[tuple[int, float]]) -> None:
+def make_depth_graph(points: list[tuple[int, float]]) -> None:
     if not points:
-        print("[graph] no packets — skipping graph")
+        print("[graph] no depth packets — skipping depth graph")
         return
     import matplotlib
     matplotlib.use("Agg")
@@ -82,8 +85,36 @@ def make_graph(points: list[tuple[int, float]]) -> None:
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", fontsize=9)
     fig.tight_layout()
-    fig.savefig(PNG_PATH, dpi=150)
-    print(f"[graph] saved {PNG_PATH} ({len(points)} packets, bottom + top traces)")
+    fig.savefig(DEPTH_PNG_PATH, dpi=150)
+    print(f"[graph] saved {DEPTH_PNG_PATH} ({len(points)} packets, bottom + top traces)")
+
+
+def make_pwm_graph(points: list[tuple[int, int]]) -> None:
+    if not points:
+        print("[graph] no pwm packets — skipping pwm graph")
+        return
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    points = sorted(points, key=lambda p: p[0])
+    times, pwms = zip(*points)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    # Step plot: PWM holds its value between packets, so 'post' steps reflect reality.
+    ax.step(times, pwms, where="post", linewidth=1.5, color="tab:green",
+            label="Motor PWM (0–255)")
+    ax.fill_between(times, pwms, step="post", color="tab:green", alpha=0.15)
+
+    ax.set_xlabel("Time (s, since mission start)")
+    ax.set_ylabel("PWM (0–255)")
+    ax.set_title("MATE Floats 2026 — Motor PWM over Time")
+    ax.set_ylim(0, 260)
+    ax.invert_yaxis()   # 255 (full power) at the bottom — matches depth graph orientation
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(PWM_PNG_PATH, dpi=150)
+    print(f"[graph] saved {PWM_PNG_PATH} ({len(points)} pwm samples)")
 
 
 def main() -> None:
@@ -95,7 +126,8 @@ def main() -> None:
     print("[capture] sent 'R' — waiting for dump")
 
     # Same mission timestamp may arrive twice (live + DUMP), so dedup by time key.
-    by_time: dict[int, float] = {}
+    depth_by_time: dict[int, float] = {}
+    pwm_by_time: dict[int, int] = {}
     duplicates = 0
     with LOG_PATH.open("w") as logf:
         while True:
@@ -107,18 +139,23 @@ def main() -> None:
             logf.write(line + "\n")
             packet = parse_packet(line)
             if packet:
-                t, depth = packet
-                if t in by_time:
+                t, depth, pwm = packet
+                if t in depth_by_time:
                     duplicates += 1
                 else:
-                    by_time[t] = depth
+                    depth_by_time[t] = depth
+                    if pwm is not None:
+                        pwm_by_time[t] = pwm
             if END_MARKER in line:
                 break
 
     ser.close()
-    points = list(by_time.items())
-    print(f"[capture] saved {LOG_PATH} — {len(points)} unique packets ({duplicates} duplicate(s) dropped)")
-    make_graph(points)
+    depth_points = list(depth_by_time.items())
+    pwm_points = list(pwm_by_time.items())
+    print(f"[capture] saved {LOG_PATH} — {len(depth_points)} unique packets "
+          f"({duplicates} duplicate(s) dropped, {len(pwm_points)} with pwm)")
+    make_depth_graph(depth_points)
+    make_pwm_graph(pwm_points)
 
 
 if __name__ == "__main__":
