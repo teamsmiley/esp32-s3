@@ -24,7 +24,7 @@ The mission runs as a non-blocking state machine inside `loop()` — the depth s
                    │ 'S' (start)
                    ▼
            ┌───────────────┐
-           │   DESCEND     │  motor full intake — sink fast
+           │   DESCEND     │  thruster full throttle — sink fast
            └───────┬───────┘
                    │ depth ≥ 2.27 m  (DEEP_MIN_M)
                    ▼
@@ -99,29 +99,36 @@ The packet output (`PVPHSROV HH:MM:SS XX.X kPa Y.YY meters`) reports `reportedDe
 
 ---
 
-## 4. Buoyancy engine (one-way pump)
+## 4. Propulsion (one-way brushless thruster)
 
-The float uses a single DC pump driven by an L298N H-bridge, with PWM speed control on `ENB`.
+The float uses a single brushless thruster driven by an ESC. The thruster nozzle points UP and expels water upward — the reaction pushes the float **down**.
 
-**Pump model**: 12 V 750 GPH cartridge bilge pump motor.
+**ESC model**: Castle Creations Phoenix Edge 60HV (50 V / 60 A). Replaced the previous 12 V 750 GPH bilge pump because the pump was too slow.
 
 | Pin | GPIO | Role |
 |---|---|---|
-| `IN3` | 17 | direction A (HIGH = intake) |
-| `IN4` | 18 | direction B (kept LOW — never reversed) |
-| `ENB` | 4 | PWM speed (0 = stop, 255 = full) |
+| `ESC_PWM_PIN` | 4 | ESC signal (50 Hz servo PWM, 1000–2000 μs) |
+
+The ESC takes a standard RC servo PWM signal — 50 Hz frame rate, throttle encoded as pulse width:
+
+| Pulse width | Meaning |
+|---|---|
+| 1000 μs | idle / motor stop |
+| 2000 μs | full throttle |
 
 **Operating principle:**
 
-- **Pump ON** (intake direction): water flows INTO the float → float gets heavier → sinks.
-- **Pump OFF**: residual positive buoyancy lifts the float passively → no reverse pumping needed.
+- **Thruster ON** (downward thrust): water expelled upward → reaction force → float sinks.
+- **Thruster OFF**: residual positive buoyancy lifts the float passively → no reverse needed (ESC stays in airplane / unidirectional mode).
 
-Speed presets:
+**Arming sequence**: at boot, `escArm()` attaches ledc (50 Hz / 16-bit) and holds a 1000 μs idle pulse for 2 s. The ESC beeps once → armed. Throttle commands sent before this complete are ignored, so the rest of `setup()` is safe to run.
 
-| Constant | Value | When used |
-|---|---|---|
-| `MOTOR_SPEED_FULL` | 255 (100%) | DESCEND state — sink fast to save mission time |
-| `MOTOR_SPEED_HOLD` | 90 (~35%) | HOLD bands — gentle correction to avoid overshoot |
+Speed presets (the internal 0–255 scale maps linearly onto 1000–2000 μs):
+
+| Constant | Value | Mapped pulse | When used |
+|---|---|---|---|
+| `MOTOR_SPEED_FULL` | 255 (100%) | 2000 μs | DESCEND state — sink fast to save mission time |
+| `MOTOR_SPEED_HOLD` | 90 (~35%) | ~1353 μs | HOLD bands — gentle correction to avoid overshoot |
 
 ### HOLD band controller — midpoint bang-bang
 
@@ -166,21 +173,21 @@ Single-character keys; identical behavior whether typed at the float's serial mo
 ### Emergency depth (`MAX_DEPTH_M = 3.20 m`)
 
 If reportedDepth ever exceeds 3.20 m (impossible during a clean profile), the firmware:
-1. Stops the pump
+1. Stops the thruster
 2. Forces transition to `MS_SURFACE`
 3. Lets natural buoyancy bring the float up
 
 ### DESCEND watchdog (`STATE_TIMEOUT_MS = 90 s`)
 
-If the float fails to reach the deep band within 90 seconds (pump blocked, sensor stuck, etc.):
-1. Stops the pump
+If the float fails to reach the deep band within 90 seconds (thruster fouled, sensor stuck, ESC not armed, etc.):
+1. Stops the thruster
 2. Forces transition to `MS_SURFACE`
 
-Rise phases (`ASCEND_SHALLOW`, `SURFACE`) intentionally have **no timeout** — natural buoyancy can take several minutes, especially with residual water in the pump. The operator's `X` key is the manual override.
+Rise phases (`ASCEND_SHALLOW`, `SURFACE`) intentionally have **no timeout** — natural buoyancy can take several minutes. The operator's `X` key is the manual override.
 
 ### Boot-safe motor
 
-`setup()` calls `motorStop()` immediately after `pinMode(MOTOR_ENB, OUTPUT)`. This guarantees the pump stays off across resets, even if a glitch left the GPIO momentarily HIGH.
+`setup()` calls `escArm()` before any other initialization. The first thing on the ESC line is a 1000 μs idle pulse held for 2 s — the ESC arms in that idle window, so even if a glitch leaves GPIO4 momentarily HIGH at reset, the ESC won't see a valid throttle until arming completes.
 
 ### LittleFS log backup
 

@@ -19,17 +19,26 @@
 #define I2C_SCL 9
 #define BOOT_BUTTON 0
 
-// L298N Motor B (OUT3/OUT4) with PWM speed control on ENB.
-// One-way buoyancy engine: pump only INTAKES water (sink). Motor OFF lets the float
-// passively rise via residual positive buoyancy. Reverse is wired but unused by the mission.
-// IN3=HIGH, IN4=LOW = descent (intake).   IN3=LOW, IN4=LOW = stop (rise naturally).
-// ENB jumper REMOVED — GPIO4 drives ENB with PWM (0=stop, 255=full).
-#define MOTOR_IN3 17
-#define MOTOR_IN4 18
-#define MOTOR_ENB 4
+// Castle Creations Phoenix Edge 60HV (50 V / 60 A) ESC driving a brushless thruster.
+// One-way "downward thrust": the thruster nozzle points UP, water is expelled upward,
+// reaction pushes the float DOWN. Ascent stays passive — motor OFF lets residual
+// positive buoyancy lift the float. (No ESC reverse: airplane-mode default.)
+//
+// ESC needs 50 Hz servo PWM (1000–2000 μs pulses) on a single signal pin.
+//   1000 μs = idle / motor stop      2000 μs = full throttle
+// Boot sequence: hold 1000 μs idle for ~2 s so the ESC arms before any throttle.
+// We map our legacy 0..255 "speed" scale onto 1000..2000 μs to keep the rest of
+// the mission code (CALI_PWMS, MOTOR_SPEED_HOLD, etc.) working unchanged.
+#define ESC_PWM_PIN       4
+#define ESC_LEDC_CHANNEL  0
+#define ESC_LEDC_FREQ     50      // Hz — standard servo frame rate (20 ms period)
+#define ESC_LEDC_RES      16      // bits — duty range 0..65535
+#define ESC_PULSE_IDLE_US 1000    // ESC idle / motor stop
+#define ESC_PULSE_FULL_US 2000    // ESC full throttle
+#define ESC_ARM_HOLD_MS   2000    // idle-pulse hold to arm ESC at boot
 
-#define MOTOR_SPEED_FULL          255   // DESCEND legs (full intake)
-#define MOTOR_SPEED_HOLD_DEFAULT   90   // fallback if /cali.txt absent (~35% duty)
+#define MOTOR_SPEED_FULL          255   // DESCEND legs (full thrust)
+#define MOTOR_SPEED_HOLD_DEFAULT   90   // fallback if /cali.txt absent
 int motorSpeedHold = MOTOR_SPEED_HOLD_DEFAULT;   // overridden at boot from /cali.txt
 #define CALI_FILE "/cali.txt"
 
@@ -90,9 +99,15 @@ unsigned long lastDebounceMs = 0;
 const unsigned long DEBOUNCE_MS = 50;
 
 // Motor direction + speed. We track last (dir, speed) to suppress redundant log spam.
-enum MotorDir { MOTOR_OFF, MOTOR_DESCEND, MOTOR_ASCEND };
+// Single-direction thruster: ASCEND would be a no-op (no reverse), so it's gone.
+enum MotorDir { MOTOR_OFF, MOTOR_DESCEND };
 MotorDir motorDir = MOTOR_OFF;
 int motorSpeed = 0;
+
+// Convert a servo pulse width (μs) into a 16-bit ledc duty over the 20 ms frame.
+static inline uint32_t escPulseToDuty(uint32_t pulse_us) {
+  return (pulse_us * ((1UL << ESC_LEDC_RES) - 1)) / 20000UL;
+}
 
 void motorSetSpeed(MotorDir dir, int speed) {
   if (speed < 0) speed = 0;
@@ -100,32 +115,19 @@ void motorSetSpeed(MotorDir dir, int speed) {
 
   bool changed = (dir != motorDir) || (speed != motorSpeed);
 
-  switch (dir) {
-    case MOTOR_DESCEND:
-      digitalWrite(MOTOR_IN3, HIGH);
-      digitalWrite(MOTOR_IN4, LOW);
-      analogWrite(MOTOR_ENB, speed);
-      break;
-    case MOTOR_ASCEND:
-      digitalWrite(MOTOR_IN3, LOW);
-      digitalWrite(MOTOR_IN4, HIGH);
-      analogWrite(MOTOR_ENB, speed);
-      break;
-    case MOTOR_OFF:
-    default:
-      digitalWrite(MOTOR_IN3, LOW);
-      digitalWrite(MOTOR_IN4, LOW);
-      analogWrite(MOTOR_ENB, 0);
-      speed = 0;
-      break;
+  uint32_t pulse_us;
+  if (dir == MOTOR_DESCEND) {
+    pulse_us = ESC_PULSE_IDLE_US +
+               ((uint32_t)speed * (ESC_PULSE_FULL_US - ESC_PULSE_IDLE_US)) / 255;
+  } else {
+    pulse_us = ESC_PULSE_IDLE_US;
+    speed = 0;
   }
+  ledcWrite(ESC_LEDC_CHANNEL, escPulseToDuty(pulse_us));
 
-  // Only log on direction change to keep ramp test output readable.
   if (changed && dir != motorDir) {
-    const char *name = dir == MOTOR_DESCEND ? "DESCEND (intake)"
-                     : dir == MOTOR_ASCEND  ? "ASCEND (eject)"
-                                            : "OFF";
-    Serial.printf("[MOTOR] %s (speed=%d)\n", name, speed);
+    const char *name = dir == MOTOR_DESCEND ? "DESCEND (thrust)" : "OFF";
+    Serial.printf("[MOTOR] %s (speed=%d, pulse=%u us)\n", name, speed, pulse_us);
   }
 
   motorDir = dir;
@@ -136,14 +138,26 @@ void motorSetSpeed(MotorDir dir, int speed) {
 void motorSet(MotorDir dir) { motorSetSpeed(dir, MOTOR_SPEED_FULL); }
 void motorStop() { motorSetSpeed(MOTOR_OFF, 0); }
 
+// Configure ledc for servo PWM and arm the ESC by holding the idle pulse.
+// Must run before any motorSetSpeed/motorStop call — they assume the channel is attached.
+void escArm() {
+  ledcSetup(ESC_LEDC_CHANNEL, ESC_LEDC_FREQ, ESC_LEDC_RES);
+  ledcAttachPin(ESC_PWM_PIN, ESC_LEDC_CHANNEL);
+  ledcWrite(ESC_LEDC_CHANNEL, escPulseToDuty(ESC_PULSE_IDLE_US));
+  Serial.printf("[ESC] arming on GPIO%d — idle %u us for %u ms\n",
+                ESC_PWM_PIN, ESC_PULSE_IDLE_US, ESC_ARM_HOLD_MS);
+  delay(ESC_ARM_HOLD_MS);
+  Serial.println("[ESC] armed");
+}
+
 // Mission state machine
 enum MissionState {
   MS_IDLE,             // surface, awaiting trigger
-  MS_DESCEND,          // motor intake until depth >= DEEP_MIN_M
+  MS_DESCEND,          // thruster ON (down) until depth >= DEEP_MIN_M
   MS_HOLD_DEEP,        // bang-bang at 2.5m for 30s
-  MS_ASCEND_SHALLOW,   // motor eject until depth <= SHALLOW_MAX_M
+  MS_ASCEND_SHALLOW,   // thruster OFF, passive rise until depth <= SHALLOW_MAX_M
   MS_HOLD_SHALLOW,     // bang-bang at 40cm for 30s
-  MS_SURFACE,          // motor eject until depth <= SURFACE_M
+  MS_SURFACE,          // thruster OFF, passive rise until depth <= SURFACE_M
   MS_DONE              // all profiles complete
 };
 MissionState missionState = MS_IDLE;
@@ -324,8 +338,8 @@ void caliTick(float depth) {
   }
 }
 
-// One-way buoyancy controller for HOLD states.
-// Strategy: pump (sink) when shallower than the band midpoint, otherwise stop and let
+// One-way thrust controller for HOLD states.
+// Strategy: thrust down when shallower than the band midpoint, otherwise stop and let
 // natural buoyancy bring the float back up. Returns true while depth is inside the band.
 bool holdControl(float depth, float lo, float hi) {
   float midpoint = (lo + hi) * 0.5f;
@@ -343,18 +357,18 @@ void missionTick(float depth) {
     return;
   }
 
-  // Emergency: too deep -> stop pump, let buoyancy bring the float up
+  // Emergency: too deep -> stop thruster, let buoyancy bring the float up
   if (depth > MAX_DEPTH_M) {
-    Serial.printf("[SAFETY] depth %.2f m > %.2f m — pump off, surfacing\n", depth, MAX_DEPTH_M);
+    Serial.printf("[SAFETY] depth %.2f m > %.2f m — thruster off, surfacing\n", depth, MAX_DEPTH_M);
     motorStop();
     enterState(MS_SURFACE);
     return;
   }
 
-  // Watchdog only on the active-pumping state (DESCEND). Rise phases rely on natural buoyancy
+  // Watchdog only on the active-thrust state (DESCEND). Rise phases rely on natural buoyancy
   // and may legitimately take several minutes, so they have no timeout.
   if (missionState == MS_DESCEND && (millis() - stateStartMs) > STATE_TIMEOUT_MS) {
-    Serial.printf("[SAFETY] DESCEND timeout — pump off, surfacing\n");
+    Serial.printf("[SAFETY] DESCEND timeout — thruster off, surfacing\n");
     motorStop();
     enterState(MS_SURFACE);
     return;
@@ -635,10 +649,7 @@ void setup() {
   Serial.printf("I2C pins: SDA=GPIO%d, SCL=GPIO%d\n", I2C_SDA, I2C_SCL);
 
   pinMode(BOOT_BUTTON, INPUT_PULLUP);
-  pinMode(MOTOR_IN3, OUTPUT);
-  pinMode(MOTOR_IN4, OUTPUT);
-  pinMode(MOTOR_ENB, OUTPUT);
-  motorStop();  // ensure motor is off at boot
+  escArm();  // attaches ledc + holds 1000 us idle so the ESC arms before any throttle
 
 #if USE_DEPTH_SENSOR
   Wire.begin(I2C_SDA, I2C_SCL);

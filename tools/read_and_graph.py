@@ -19,7 +19,7 @@ from pathlib import Path
 
 PACKET_RE = re.compile(
     r"^(?:\[RX\]\s+)?(\w+)\s+(\d{2}):(\d{2}):(\d{2})\s+"
-    r"([\d.]+)\s+kPa\s+([\d.]+)\s+meters(?:\s+pwm=(\d+))?\s*$"
+    r"(-?[\d.]+)\s+kPa\s+(-?[\d.]+)\s+meters(?:\s+pwm=(\d+))?\s*$"
 )
 END_MARKER = "---- END received.log ----"
 ESP32_S3_VID = 0x303A
@@ -140,7 +140,9 @@ def main() -> None:
             packet = parse_packet(line)
             if packet:
                 t, depth, pwm = packet
-                if t in depth_by_time:
+                # On timestamp collision, prefer the packet that carries pwm — the
+                # log can mix old-firmware lines (no pwm) with new-firmware lines.
+                if t in depth_by_time and (pwm is None or t in pwm_by_time):
                     duplicates += 1
                 else:
                     depth_by_time[t] = depth

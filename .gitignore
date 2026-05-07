@@ -8,3 +8,4 @@ tools/__pycache__/
 CLAUDE.md
 tools/received_depth.png
 tools/received.log
+tools/received_pwm.png

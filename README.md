@@ -6,11 +6,11 @@ Autonomous float firmware running on two ESP32-S3 DevKitC-1 N16R8 boards. Built 
 - **Framework**: Arduino (PlatformIO)
 - **Wireless**: ESP-NOW bidirectional unicast (MAC whitelist prevents cross-team interference at competition)
 - **Depth sensor**: BlueRobotics MS5837-30BA (I2C 0x76, SDA=GPIO8, SCL=GPIO9)
-- **Buoyancy engine**: One-way 12 V 750 GPH cartridge bilge pump motor on L298N Motor B — IN3=GPIO17, IN4=GPIO18, ENB=GPIO4 (PWM speed)
-  - Pump runs ONLY in the descent direction (IN3 HIGH, IN4 LOW): water intake → float sinks
-  - When the pump stops, residual positive buoyancy lifts the float passively → no reverse pumping needed
-  - HOLD bands use a midpoint-based bang-bang: pump on (gentle) when shallower than midpoint, pump off when deeper
-  - ENB jumper must be REMOVED — speed is driven by GPIO4 PWM (0=stop, 255=full)
+- **Propulsion**: Brushless thruster driven by a Castle Creations Phoenix Edge 60HV ESC (50 V / 60 A). ESC signal on GPIO4 (50 Hz servo PWM, 1000 μs idle → 2000 μs full)
+  - One-way "downward thrust": thruster nozzle points UP, water expelled upward, reaction pushes the float DOWN
+  - When the thruster stops, residual positive buoyancy lifts the float passively → no reverse needed (ESC stays in airplane / unidirectional mode)
+  - HOLD bands use a midpoint-based bang-bang: thrust ON (gentle) when shallower than midpoint, thrust OFF when deeper
+  - Boot sequence holds 1000 μs idle for ~2 s so the ESC arms before any throttle is sent
 - **Float geometry**: 13 in (33.02 cm) total — 12 in tube + 0.5 in top cap + 0.5 in bottom cap. The depth sensor sits in the bottom cap **flush with the float's bottom face**, so the sensor reading equals the bottom-of-float depth with zero offset. Bottom-mounting keeps the sensor submerged the longest as the float rises and removes any need to disclose a sensor offset to the judge for the 2.5 m hold.
 
 > **First time setting up?** See [`docs/prerequisites.md`](docs/prerequisites.md) — installs uv, syncs the `tools/` venv, and walks through the two-terminal mission flow.
