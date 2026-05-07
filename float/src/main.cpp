@@ -165,6 +165,13 @@ void enterState(MissionState s) {
 }
 
 void missionStart() {
+  // Rotate /mission.log -> /mission.log.bak so each mission starts with a clean log.
+  // Without this, back-to-back missions in the same boot session would append.
+  if (fsReady && LittleFS.exists(LOG_FILE)) {
+    if (LittleFS.exists(LOG_BACKUP)) LittleFS.remove(LOG_BACKUP);
+    LittleFS.rename(LOG_FILE, LOG_BACKUP);
+    Serial.println("[LittleFS] previous mission log backed up to mission.log.bak");
+  }
   profileIndex = 0;
   enterState(MS_DESCEND);
 }
