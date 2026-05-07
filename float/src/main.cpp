@@ -212,6 +212,10 @@ unsigned long caliCurrentStepMs() {
   return caliInline ? CALI_INLINE_STEP_MS : CALI_STEP_MS;
 }
 
+// Forward declarations for LittleFS calibration helpers (defined later).
+bool loadHoldSpeed();
+void saveHoldSpeed(int v);
+
 void caliStart() {
   caliInline = false;
   caliPhase = CALI_DESCEND;
