@@ -32,7 +32,8 @@
 #define ESC_PWM_PIN       4
 #define ESC_LEDC_CHANNEL  0
 #define ESC_LEDC_FREQ     50      // Hz — standard servo frame rate (20 ms period)
-#define ESC_LEDC_RES      16      // bits — duty range 0..65535
+#define ESC_LEDC_RES      14      // bits — ESP32-S3 LEDC caps at 14 bits/channel
+                                  //        duty range 0..16383, step ~1.22 μs at 50 Hz
 #define ESC_PULSE_IDLE_US 1000    // ESC idle / motor stop
 #define ESC_PULSE_FULL_US 2000    // ESC full throttle
 #define ESC_ARM_HOLD_MS   2000    // idle-pulse hold to arm ESC at boot
@@ -141,11 +142,18 @@ void motorStop() { motorSetSpeed(MOTOR_OFF, 0); }
 // Configure ledc for servo PWM and arm the ESC by holding the idle pulse.
 // Must run before any motorSetSpeed/motorStop call — they assume the channel is attached.
 void escArm() {
-  ledcSetup(ESC_LEDC_CHANNEL, ESC_LEDC_FREQ, ESC_LEDC_RES);
+  // ledcSetup returns the actual frequency it could configure, or 0 on failure
+  // (e.g. resolution too high for ESP32-S3, which caps at 14 bits).
+  uint32_t actualFreq = ledcSetup(ESC_LEDC_CHANNEL, ESC_LEDC_FREQ, ESC_LEDC_RES);
+  if (actualFreq == 0) {
+    Serial.printf("[ESC] FATAL: ledcSetup failed (freq=%u Hz, res=%u bits) — halt\n",
+                  ESC_LEDC_FREQ, ESC_LEDC_RES);
+    while (true) { delay(1000); }
+  }
   ledcAttachPin(ESC_PWM_PIN, ESC_LEDC_CHANNEL);
   ledcWrite(ESC_LEDC_CHANNEL, escPulseToDuty(ESC_PULSE_IDLE_US));
-  Serial.printf("[ESC] arming on GPIO%d — idle %u us for %u ms\n",
-                ESC_PWM_PIN, ESC_PULSE_IDLE_US, ESC_ARM_HOLD_MS);
+  Serial.printf("[ESC] arming on GPIO%d — idle %u us for %u ms (ledc %u Hz, %u bits)\n",
+                ESC_PWM_PIN, ESC_PULSE_IDLE_US, ESC_ARM_HOLD_MS, actualFreq, ESC_LEDC_RES);
   delay(ESC_ARM_HOLD_MS);
   Serial.println("[ESC] armed");
 }

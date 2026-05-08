@@ -121,7 +121,7 @@ ESC는 표준 RC servo PWM을 받습니다 — 50 Hz frame, pulse width 로 thro
 - **Thruster ON** (downward thrust): 물이 위로 분사 → 반작용 → 플로트 하강
 - **Thruster OFF**: 잔여 양의 부력으로 자연스럽게 떠오름 → 역회전 불필요 (ESC는 airplane / 단방향 모드)
 
-**Arming 시퀀스**: 부팅 시 `escArm()`이 ledc(50 Hz / 16-bit)를 attach하고 1000 μs idle 펄스를 2초간 유지. ESC가 beep 한 번 → arming 완료. 이 단계 전에는 throttle 명령이 무시되니 펌웨어가 다른 setup 작업을 진행해도 안전.
+**Arming 시퀀스**: 부팅 시 `escArm()`이 ledc(50 Hz / 14-bit — ESP32-S3 LEDC는 채널당 최대 14 비트)를 attach하고 1000 μs idle 펄스를 2초간 유지. ESC가 beep 한 번 → arming 완료. 이 단계 전에는 throttle 명령이 무시되니 펌웨어가 다른 setup 작업을 진행해도 안전.
 
 속도 프리셋 (내부 0–255 스케일을 1000–2000 μs 펄스에 선형 매핑):
 

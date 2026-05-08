@@ -121,7 +121,7 @@ The ESC takes a standard RC servo PWM signal — 50 Hz frame rate, throttle enco
 - **Thruster ON** (downward thrust): water expelled upward → reaction force → float sinks.
 - **Thruster OFF**: residual positive buoyancy lifts the float passively → no reverse needed (ESC stays in airplane / unidirectional mode).
 
-**Arming sequence**: at boot, `escArm()` attaches ledc (50 Hz / 16-bit) and holds a 1000 μs idle pulse for 2 s. The ESC beeps once → armed. Throttle commands sent before this complete are ignored, so the rest of `setup()` is safe to run.
+**Arming sequence**: at boot, `escArm()` attaches ledc (50 Hz / 14-bit — ESP32-S3 LEDC caps each channel at 14 bits) and holds a 1000 μs idle pulse for 2 s. The ESC beeps once → armed. Throttle commands sent before this complete are ignored, so the rest of `setup()` is safe to run.
 
 Speed presets (the internal 0–255 scale maps linearly onto 1000–2000 μs):
 
